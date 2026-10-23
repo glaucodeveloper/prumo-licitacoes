@@ -6,10 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:mobile": "vite build mobile --config mobile/vite.config.ts",
+    "cap:sync": "npm run build:mobile && cap sync android",
+    "android:release": "npm run cap:sync && cd android && ./gradlew assembleRelease",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "typescript": "^5.6.3",
     "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/preferences": "^8.0.1"
   }
 }

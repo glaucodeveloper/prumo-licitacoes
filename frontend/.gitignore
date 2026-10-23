@@ -1,0 +1,6 @@
+android/.gradle/
+android/**/build/
+android/local.properties
+android/keystore.properties
+android/.idea/
+dist-mobile/

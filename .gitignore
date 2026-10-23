@@ -21,9 +21,9 @@ release/
 *.log
 .DS_Store
 Thumbs.db
+# Superseded hand-built Android package; Capacitor project lives under frontend/android.
+/android/
 # Android signing credentials
-/android/keystore.properties
-/android/local.properties
 *.jks
 *.keystore
 *.p12
