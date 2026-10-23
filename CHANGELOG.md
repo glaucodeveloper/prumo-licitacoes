@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.0.6 — 23 de outubro de 2026
+
+- Corrige leitura e renderização de PDFs em versões do Chromium sem `Map.prototype.getOrInsertComputed`, incluindo a execução no worker.
+
 ## 1.0.4 — 23 de outubro de 2026
 
 - Remove a confirmação de equipe do cadastro de CATs e elimina o campo legado de registros existentes.

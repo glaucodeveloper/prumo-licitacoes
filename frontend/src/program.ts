@@ -47,7 +47,11 @@ export async function startApplication(): Promise<void> {
     return target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
   };
   const entriesOf = (value: unknown): Array<[string, any]> => Object.entries((value || {}) as Record<string, any>);
-  const loadPdfJs = (): Promise<any> => import(/* @vite-ignore */ new URL(appPath('/vendor/pdfjs/pdf.mjs'), document.baseURI).href);
+  const loadPdfJs = async (): Promise<any> => {
+    const compatUrl = new URL(appPath('/vendor/pdfjs/compat.mjs'), document.baseURI).href;
+    await import(/* @vite-ignore */ compatUrl);
+    return import(/* @vite-ignore */ new URL(appPath('/vendor/pdfjs/pdf.mjs'), document.baseURI).href);
+  };
 
   const STORAGE = 'prumo-licitacoes-v1';
   const CAT_MEMORY_MIGRATION = 'cat-comprehension-v4';
@@ -1817,7 +1821,7 @@ export async function startApplication(): Promise<void> {
 
   async function readCatPdfPageCount(blob, token) {
     const pdfjs = await loadPdfJs();
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
     const task = pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), cMapUrl: new URL('./vendor/pdfjs/cmaps/', document.baseURI).href, cMapPacked: true, standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', document.baseURI).href });
     catReaderPdfTask = task;
     const pdf = await task.promise;
@@ -2565,7 +2569,7 @@ export async function startApplication(): Promise<void> {
         throw new Error('O serviço OCR local ou o MiniCPM pelo ngrok não estão disponíveis.');
       }
       const pdfjs = await loadPdfJs();
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
       for (const [documentIndex, entry] of documents.entries()) {
         const { companyId, cat, file } = entry;
         catReprocessState.current = `${cat.number ? `CAT ${cat.number}` : file.name} · ${company(companyId).short}`;
@@ -3147,7 +3151,7 @@ export async function startApplication(): Promise<void> {
   }
   async function extractPdfText(file, onPage = null, { fullDocument = false } = {}) {
     const pdfjs = await loadPdfJs();
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const loading = pdfjs.getDocument({
       data: bytes,
@@ -3405,7 +3409,7 @@ export async function startApplication(): Promise<void> {
   }
   async function pdfPagesForQuoteOcr(file, maxPages = 8) {
     const pdfjs = await loadPdfJs();
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
     const data = new Uint8Array(await file.arrayBuffer());
     const loading = pdfjs.getDocument({ data, cMapUrl: new URL('./vendor/pdfjs/cmaps/', document.baseURI).href, cMapPacked: true, standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', document.baseURI).href });
     const pdf = await loading.promise;
@@ -3431,7 +3435,7 @@ export async function startApplication(): Promise<void> {
 
   async function catPdfImagePagesForOcr(file, maxPages = 25, onProgress: ((pageNumber: number, pageCount: number) => void) | null = null) {
     const pdfjs = await loadPdfJs();
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
     const loading = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: new URL('./vendor/pdfjs/cmaps/', document.baseURI).href, cMapPacked: true, standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', document.baseURI).href });
     const pdf = await loading.promise;
     const pages = [];
@@ -3983,7 +3987,7 @@ export async function startApplication(): Promise<void> {
             const pageResults: Array<{ page: number; result: any; text: string; reviewedText?: string; reviewModel?: string }> = [];
             const failedPages = [];
             const imagePdfJs = await loadPdfJs();
-            imagePdfJs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
+            imagePdfJs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
             const imagePdfTask = imagePdfJs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: new URL('./vendor/pdfjs/cmaps/', document.baseURI).href, cMapPacked: true, standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', document.baseURI).href });
             const imagePdf = await imagePdfTask.promise;
             try {
