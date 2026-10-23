@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f5f7" />
+    <meta name="description" content="Painel de editais, propostas e cotações para Confidence e Isocon." />
+    <title>Prumo — Licitações</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegação principal">
+        <a class="brand" href="#assistente" aria-label="Prumo, início">
+          <span class="brand-symbol"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5 22V6h8a5 5 0 1 1 0 10H9"/><path d="M19 22l-6-6"/><path d="M21 5v4"/></svg></span>
+          <span class="brand-copy"><strong>prumo</strong><small>LICITAÇÕES &amp; OBRAS</small></span>
+        </a>
+
+        <button class="company-switcher" id="companySwitcher" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span class="company-mark" id="companyMark">T</span>
+          <span class="company-copy"><small>EMPRESA ATIVA</small><strong id="companyName">Todas as empresas</strong></span>
+          <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+        </button>
+        <div class="company-menu" id="companyMenu" role="listbox" aria-label="Selecionar empresa" hidden></div>
+
+        <div class="nav-caption">ESPAÇO DE TRABALHO</div>
+        <nav class="nav-list">
+          <button class="nav-link active" data-page="assistente" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v9H9l-4 3v-3H3z"/><path d="M6.5 8h7M6.5 10.5h4.5"/></svg><span>Assistente</span><span class="nav-dot"></span></button>
+          <button class="nav-link" data-page="editais" type="button"><svg viewBox="0 0 20 20"><path d="M5 2.75h7l3 3v11.5H5z"/><path d="M12 3v3h3M7.5 9h5M7.5 11.5h5M7.5 14h3"/></svg><span>Editais</span><span class="nav-count" id="noticeNavCount">3</span></button>
+          <button class="nav-link" data-page="propostas" type="button"><svg viewBox="0 0 20 20"><path d="M3.5 5.5h13M5 3.5h10v13H5z"/><path d="m7.5 10 1.8 1.8 3.7-3.9"/></svg><span>Propostas</span><span class="nav-count">2</span></button>
+          <button class="nav-link" data-page="cotacoes" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v11H3z"/><path d="M3 8h14M7 8v7.5M12 8v7.5"/><path d="M6 2.5v2M14 2.5v2"/></svg><span>Itens e cotações</span></button>
+          <button class="nav-link" data-page="cats" type="button"><svg viewBox="0 0 20 20"><path d="M4 3.5h12v13H4z"/><path d="M7 7h6M7 10h6M7 13h3"/><path d="m13 14 1.2 1.2L17 12.5"/></svg><span>CATs técnicas</span><span class="nav-dot"></span></button>
+          <button class="nav-link" data-page="perfis-profissionais" type="button"><svg viewBox="0 0 20 20"><circle cx="10" cy="6.5" r="3"/><path d="M4 17c.6-3.2 2.6-4.8 6-4.8s5.4 1.6 6 4.8"/><path d="m14.5 4.5 1.2 1.2L18 3.3"/></svg><span>Perfis profissionais</span><span class="nav-dot"></span></button>
+          <button class="nav-link" data-page="clientes" type="button"><svg viewBox="0 0 20 20"><path d="M3 17V6l7-3 7 3v11z"/><path d="M7 17v-5h6v5M7 8h.01M10 8h.01M13 8h.01"/></svg><span>Clientes</span></button>
+          <button class="nav-link" data-page="cnaes" type="button"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/><path d="M3.7 6.2 2.5 4.5M16.3 6.2l1.2-1.7"/></svg><span>Empresas</span></button>
+        </nav>
+
+        <div class="routine-box">
+          <div class="routine-heading"><span>ROTINAS RÁPIDAS</span></div>
+          <span class="routine-loading">Carregando rotinas…</span>
+        </div>
+
+        <div class="sidebar-bottom">
+          <div class="connection-card dev-only">
+            <div class="connection-title"><span>CONEXÕES</span><span class="demo-pill">LOCAL</span></div>
+            <div class="connection-row"><span class="service-led neutral"></span><span>OpenJev System One</span><small id="openjevStatus">ajustar</small></div>
+            <div class="connection-row"><span class="service-led neutral"></span><span>Metis memory</span><small id="metisStatus">local</small></div>
+          </div>
+          <button class="settings-link" id="openSettings" type="button"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3"/><path d="m8.5 2.8.5 1.6a6 6 0 0 1 2 0l.5-1.6 2 .8-.5 1.6a6 6 0 0 1 1.4 1.4l1.6-.5.8 2-1.6.5a6 6 0 0 1 0 2l1.6.5-.8 2-1.6-.5a6 6 0 0 1-1.4 1.4l.5 1.6-2 .8-.5-1.6a6 6 0 0 1-2 0l-.5 1.6-2-.8.5-1.6a6 6 0 0 1-1.4-1.4l-1.6.5-.8-2 1.6-.5a6 6 0 0 1 0-2l-1.6-.5.8-2 1.6.5a6 6 0 0 1 1.4-1.4l-.5-1.6z"/></svg><span>Conexões e memória</span><kbd>⌘ ,</kbd></button>
+          <div class="user-strip"><span class="avatar">IC</span><span><strong>Equipe de licitações</strong><small>Workspace local</small></span><button class="more-button" type="button" aria-label="Mais opções">···</button></div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div class="topbar-left"><button class="icon-button nav-toggle" id="toggleSidebar" type="button" aria-label="Recolher navegação" aria-expanded="true" title="Recolher navegação"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M8 4v12"/></svg></button><div class="breadcrumb"><span>Prumo</span><span class="crumb-sep">/</span><strong id="breadcrumbPage">Assistente</strong></div></div>
+          <div class="topbar-right"><span class="today-label" id="todayLabel"></span><span class="top-separator"></span><span class="work-profile"><span class="profile-avatar">IC</span> Equipe</span><button class="icon-button" id="topSettings" type="button" aria-label="Configurações"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3"/><path d="m8.5 2.8.5 1.6a6 6 0 0 1 2 0l.5-1.6 2 .8-.5 1.6a6 6 0 0 1 1.4 1.4l1.6-.5.8 2-1.6.5a6 6 0 0 1 0 2l1.6.5-.8 2-1.6-.5a6 6 0 0 1-1.4 1.4l.5 1.6-2 .8-.5-1.6a6 6 0 0 1-2 0l-.5 1.6-2-.8.5-1.6a6 6 0 0 1-1.4-1.4l-1.6.5-.8-2 1.6-.5a6 6 0 0 1 0-2l-1.6-.5.8-2 1.6.5a6 6 0 0 1 1.4-1.4l-.5-1.6z"/></svg></button></div>
+        </header>
+        <div class="page-container" id="pageContainer" tabindex="-1"></div>
+      </main>
+    </div>
+
+    <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+      <form method="dialog" class="dialog-top"><div><span class="dialog-kicker">ACESSO E MEMÓRIA</span><h2 id="settingsTitle">Portais e memória</h2></div><button class="icon-button" value="cancel" aria-label="Fechar"><svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></svg></button></form>
+      <div class="dialog-content">
+        <section class="settings-section"><div class="settings-section-head"><div><h3>Integrações do sistema</h3><p>Serviços, endpoints e credenciais são administrados no arquivo de configuração local.</p></div></div>
+          <div class="settings-integration-list dev-only"><div><span>OpenJev System One e CPU</span><span class="service-tag" id="dialogOpenjevState">Verificando</span></div><div><span>Metis-4B · GPU</span><span class="service-tag neutral-tag" id="dialogAssistantState">Verificando</span></div><div><span>Metis memory</span><span class="service-tag neutral-tag" id="dialogMetisState">Verificando</span></div></div>
+        </section>
+        <section class="settings-section portal-login-section"><div class="settings-section-head"><div><h3>Acessos aos portais</h3><p>O login do Licitações-e é salvo localmente para a coleta em segundo plano.</p></div><span class="service-tag neutral-tag">Sessão local</span></div>
+          <p class="portal-login-note">“Abrir janela de login” inicia o navegador do computador. Entre no portal nessa janela, volte ao Prumo e escolha “Salvar sessão”. MFA e verificações humanas continuam com você.</p>
+          <div id="portalLoginList" class="portal-login-list"><div class="empty-table">Consultando sessões salvas…</div></div>
+          <p class="portal-login-storage">Cookies e tokens da sessão ficam em arquivo local com acesso restrito à conta do sistema. Remover a sessão exige novo login na próxima captura.</p>
+        </section>
+        <section class="settings-section"><div class="settings-section-head"><div><h3>Memória do workspace</h3><p>Carregue ou consolide dados na unidade Metis configurada.</p></div></div>
+          <div class="memory-summary"><span class="memory-orb">M</span><span><strong id="memoryCount">4 memórias ativas</strong><small>Guardadas localmente neste navegador.</small></span><button id="manageMemory" class="text-button" type="button">Gerenciar</button></div>
+          <div class="metis-actions"><button id="loadMetisMemory" class="button-secondary button-sm" type="button">Carregar unidade</button><button id="saveMetisMemory" class="button-secondary button-sm" type="button">Consolidar memória</button></div>
+        </section>
+        <div class="settings-note"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M10 9v4M10 6.5h.01"/></svg><span>Configuração operacional e prompts de rotina ficam fora da interface, no arquivo local do servidor.</span></div>
+      </div>
+      <div class="dialog-actions"><span class="dialog-spacer"></span><button class="button-secondary" value="cancel">Fechar</button></div>
+    </dialog>
+
+    <dialog class="memory-dialog" id="memoryDialog" aria-labelledby="memoryTitle">
+      <form method="dialog" class="dialog-top"><div><span class="dialog-kicker">METIS MEMORY</span><h2 id="memoryTitle">Memórias do workspace</h2></div><button class="icon-button" value="cancel" aria-label="Fechar"><svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></svg></button></form>
+      <div class="dialog-content"><p class="memory-intro">Contexto operacional para as análises. Edite ou remova qualquer memória; itens ainda não validados aparecem sinalizados.</p><div id="memoryList" class="memory-list"></div><form id="addMemoryForm" class="add-memory-form"><label class="field-label" for="memoryInput">Adicionar uma memória</label><div class="input-with-action"><input id="memoryInput" maxlength="220" placeholder="Ex.: conferir validade das certidões antes de fechar a proposta" /><button class="button-primary" type="submit">Adicionar</button></div></form></div>
+      <div class="dialog-actions"><span class="memory-storage-note">Salvas neste navegador até conectar a persistência Metis.</span><span class="dialog-spacer"></span><button class="button-primary" value="cancel">Concluído</button></div>
+    </dialog>
+    <input id="pdfUpload" type="file" accept="application/pdf,.pdf" hidden />
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "services": {
+    "openjev": {
+      "endpoint": "http://127.0.0.1:8765",
+      "model": "openjev-27b-q4_k_m",
+      "apiKey": ""
+    },
+    "assistant": {
+      "provider": "metis",
+      "endpoint": "http://127.0.0.1:8765/v1/metis/chat/completions",
+      "model": "metis-4b:prumo-licitacoes",
+      "apiKey": ""
+    },
+    "forge": {
+      "endpoint": "",
+      "model": "",
+      "apiKey": ""
+    },
+    "metis": {
+      "endpoint": "http://127.0.0.1:8765/v1/metis",
+      "apiKey": "",
+      "slug": "prumo-licitacoes",
+      "unitId": "confidence",
+      "okfPath": "source-okfs/operacao.okf"
+    },
+    "nvidia": {
+      "endpoint": "https://integrate.api.nvidia.com/v1/chat/completions",
+      "apiKey": "",
+      "recordOcrModel": "meta/llama-3.2-11b-vision-instruct"
+    }
+  },
+  "routines": [
+    {
+      "id": "triage",
+      "label": "Triar editais novos",
+      "prompt": "Faça a triagem dos editais novos para a empresa ativa. Compare objeto, itens, CNAEs, CATs de construção, histórico de participação, habilitação, valor e prazo. Separe o que precisa de validação humana."
+    },
+    {
+      "id": "deadlines",
+      "label": "Prazos da semana",
+      "prompt": "Mostre os prazos de editais e propostas dos próximos 7 dias, ordenados pelo risco de perder o prazo."
+    },
+    {
+      "id": "checklist",
+      "label": "Checklist de habilitação",
+      "prompt": "Monte um checklist de habilitação para o edital selecionado, marcando documentos ausentes e itens que exigem conferência."
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Secrets, environment and per-machine config
+.env
+.env.*
+!.env.example
+prumo.config.json
+.tokensave/
+
+# User data and portal sessions
+data/captures/
+data/portal-sessions/
+data/*.db
+data/*.sqlite*
+
+# Dependencies and build output
+node_modules/
+frontend/node_modules/
+frontend/dist/
+output/
+.presentation-build/
+release/
+*.log
+.DS_Store
+Thumbs.db
