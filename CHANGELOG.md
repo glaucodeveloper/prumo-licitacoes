@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.7 — 23 de outubro de 2026
+
+- Verifica a chave ngrok e a saúde do OCR local em toda inicialização; pede outra chave se o roteador a rejeitar.
+- Preserva a chave digitada no perfil local e repassa chave e endpoint ao backend Electron.
+- Limpa cache HTTP, cookies e localStorage na primeira inicialização desta versão.
+
 ## 1.0.6 — 23 de outubro de 2026
 
 - Corrige leitura e renderização de PDFs em versões do Chromium sem `Map.prototype.getOrInsertComputed`, incluindo a execução no worker.

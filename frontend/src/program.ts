@@ -1,7 +1,7 @@
 import { esc, renderMarkdownResponse } from './components';
 import type { AssistantChatRequest, AssistantChatResponse, AssistantMessage, CatRecord, CompanyId, CompanyProfile, PrumoState } from './types';
 
-const INITIAL_BROWSER_CLEANUP_MARKER = 'prumo-initial-browser-cleanup-v1';
+const INITIAL_BROWSER_CLEANUP_MARKER = 'prumo-initial-browser-cleanup-v2';
 
 async function clearCookiesForCurrentOrigin(): Promise<void> {
   const cookieStore = (window as any).cookieStore;

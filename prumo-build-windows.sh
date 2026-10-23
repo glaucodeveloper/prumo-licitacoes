@@ -13,8 +13,8 @@ for tool in node npm rsync; do
   command -v "$tool" >/dev/null || { echo "ERRO: falta $tool" >&2; exit 1; }
 done
 
-STAGE="$ROOT/.prumo-electron-win-stage"
-OUT="$ROOT/output/electron-windows"
+STAGE="${PRUMO_BUILD_STAGE:-$ROOT/.prumo-electron-win-stage}"
+OUT="${PRUMO_BUILD_OUT:-$ROOT/output/electron-windows}"
 if [[ "$PREPARE_ONLY" != '--prepare-only' && "${PRUMO_SKIP_FRONTEND_BUILD:-0}" != 1 ]]; then
   echo '[1/6] Compilando frontend...'
   if [[ ! -d "$ROOT/node_modules" ]]; then (cd "$ROOT" && npm ci --no-audit --no-fund); fi
@@ -112,11 +112,13 @@ let quitting = false;
 let started = false;
 let startTask = null;
 let config = null;
+let startupNotice = '';
 
 function userFile(name) { return path.join(app.getPath('userData'), name); }
 async function clearFirstRunBrowserData(origin) {
-  const marker = userFile('browser-storage-cleanup-v1');
+  const marker = userFile(`browser-storage-cleanup-${app.getVersion()}`);
   if (fs.existsSync(marker)) return;
+  await session.defaultSession.clearCache();
   await session.defaultSession.clearStorageData({
     origin,
     storages: ['cookies', 'localstorage'],
@@ -131,7 +133,9 @@ function effectiveConfig() {
   const saved = savedConfig();
   const supplied = process.env.PRUMO_ROUTER_KEY || saved?.key || '';
   if (!supplied) return null;
-  try { return normalizeConfig({ key: supplied }, saved || {}); }
+  try {
+    return { ...normalizeConfig({ key: supplied }, saved || {}), validatedForVersion: saved?.validatedForVersion || '' };
+  }
   catch (error) { log('Configuração inválida: ' + error.message); return null; }
 }
 function normalizeConfig(input, previous = {}) {
@@ -145,9 +149,41 @@ function normalizeConfig(input, previous = {}) {
     model: 'openjev-27b-q4_k_m',
   };
 }
+async function validateRouterConfig(candidate) {
+  const url = new URL('/19202/health', ROUTER_ORIGIN);
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { 'X-Port-Router-Key': candidate.key, 'ngrok-skip-browser-warning': '1', accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+      redirect: 'error',
+    });
+  } catch (error) {
+    return { ok: false, invalidKey: false, error: `Não foi possível validar a conexão com o roteador e o OCR local: ${error.message}` };
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, invalidKey: true, error: `O roteador recusou a chave informada (HTTP ${response.status}).` };
+  }
+  if (!response.ok) {
+    return { ok: false, invalidKey: false, error: `O roteador respondeu HTTP ${response.status} ao verificar o serviço OCR na porta 19202.` };
+  }
+  let health;
+  try { health = await response.json(); }
+  catch { return { ok: false, invalidKey: false, error: 'O serviço OCR respondeu em formato inválido.' }; }
+  if (health?.ready !== true || health?.model !== 'tesseract-lstm-por-eng-v1') {
+    return { ok: false, invalidKey: false, error: 'A chave foi aceita, mas o serviço OCR local não está pronto com o modelo esperado.' };
+  }
+  return { ok: true, invalidKey: false, message: 'Chave aceita. Roteador ngrok e OCR local responderam.' };
+}
 function publicConfig() {
   const current = config || { remoteUrl: ROUTER_ORIGIN, key: '', port: DEFAULT_PORT, assistantPort: DEFAULT_ASSISTANT_PORT, model: 'openjev-27b-q4_k_m' };
-  return { remoteUrl: ROUTER_ORIGIN, keyConfigured: Boolean(current.key), port: current.port, assistantPort: current.assistantPort, model: current.model };
+  return { remoteUrl: ROUTER_ORIGIN, keyConfigured: Boolean(current.key), setupRequired: !current.key, startupNotice, port: current.port, assistantPort: current.assistantPort, model: current.model };
+}
+function persistConfig(value) {
+  const file = userFile('prumo-remote.json');
+  fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
 }
 function log(line) {
   try { fs.appendFileSync(userFile('prumo.log'), `[${new Date().toISOString()}] ${line}\n`); } catch {}
@@ -235,6 +271,8 @@ async function startBackend() {
       OPENJEV_MODEL: config.model,
       ASSISTANT_URL: `http://127.0.0.1:${relayPort}/v1/metis/chat/completions`,
       ASSISTANT_MODEL: 'metis-4b:prumo-licitacoes',
+      PORT_ROUTER_KEY: config.key,
+      PORT_ROUTER_PUBLIC_URL: config.remoteUrl,
       PRUMO_DATA_DIR: userFile('data'),
       PRUMO_CONFIG_PATH: userFile('prumo.config.json'),
       ...(fs.existsSync(path.join(APP_ROOT, 'browsers')) ? { PLAYWRIGHT_BROWSERS_PATH: path.join(APP_ROOT, 'browsers') } : {}),
@@ -309,16 +347,24 @@ app.whenReady().then(async () => {
   fs.mkdirSync(app.getPath('userData'), { recursive: true, mode: 0o700 });
   config = effectiveConfig();
   ipcMain.handle('prumo:config', () => publicConfig());
+  ipcMain.handle('prumo:validate-config', async (_event, input) => {
+    try {
+      const candidate = normalizeConfig(input, config || {});
+      return await validateRouterConfig(candidate);
+    } catch (error) { return { ok: false, error: error.message }; }
+  });
   ipcMain.handle('prumo:save-config', async (_event, input) => {
     try {
-      const next = normalizeConfig(input, config || {});
-      const file = userFile('prumo-remote.json');
-      fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
-      fs.chmodSync(file, 0o600);
+      const candidate = normalizeConfig(input, config || {});
+      const validation = await validateRouterConfig(candidate);
+      if (!validation.ok) return validation;
+      const next = { ...candidate, validatedForVersion: app.getVersion() };
+      persistConfig(next);
       config = next;
+      startupNotice = validation.message;
       if (!started) await startBackend();
       if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
-      return { ok: true };
+      return { ok: true, message: validation.message };
     } catch (error) { log('Configuração: ' + error.message); return { ok: false, error: error.message }; }
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -330,7 +376,24 @@ app.whenReady().then(async () => {
   ]));
   if (!config) openSettings();
   else {
-    try { await startBackend(); }
+    try {
+      const validation = await validateRouterConfig(config);
+      if (validation.invalidKey) {
+        startupNotice = validation.error;
+        config = null;
+        openSettings();
+        return;
+      }
+      if (validation.ok) {
+        startupNotice = validation.message;
+        config = { ...config, validatedForVersion: app.getVersion() };
+        persistConfig(config);
+      } else {
+        startupNotice = `Verificação de conexão indisponível: ${validation.error}`;
+        log(startupNotice);
+      }
+      await startBackend();
+    }
     catch (error) { log('Inicialização: ' + error.message); dialog.showErrorBox('Falha ao iniciar Prumo', error.message); app.quit(); }
   }
 }).catch(error => { dialog.showErrorBox('Prumo', error.message); app.quit(); });
@@ -348,6 +411,7 @@ cat > "$STAGE/electron/preload.cjs" <<'PRELOAD'
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('prumo', {
   getConfig: () => ipcRenderer.invoke('prumo:config'),
+  validateConfig: (value) => ipcRenderer.invoke('prumo:validate-config', value),
   saveConfig: (value) => ipcRenderer.invoke('prumo:save-config', value),
 });
 PRELOAD
@@ -363,10 +427,10 @@ input:focus{outline:2px solid #7198ea}small{display:block;color:#9aa6b9;line-hei
 button{margin-top:20px;border:0;border-radius:10px;padding:13px 17px;background:#edf0f7;color:#101218;font-weight:700;cursor:pointer;width:100%}
 #error{color:#ff9292;min-height:22px;margin:13px 0 0}.panel{border:1px solid #384354;border-radius:12px;background:#202632;padding:14px;margin-top:22px}
 </style></head><body><h1>Chave de acesso</h1>
-<p>Informe somente a chave de acesso ngrok. O Prumo conecta ao OpenJev e ao assistente Metis pelo serviço protegido na porta 8765.</p>
+<p>Informe somente a chave de acesso ngrok. O teste verifica a chave, a rota protegida e o OCR local usado na leitura das páginas de CAT.</p>
 <form id="form"><label for="key">Chave do roteador</label><input id="key" type="password" required autocomplete="off" placeholder="Cole somente ROUTER_KEY" spellcheck="false">
-<div class="panel"><strong>Conexão configurada</strong><small id="target"></small><small>A chave fica no perfil local do Windows e segue em cabeçalho de autenticação. Ela não é incluída no executável.</small></div>
-<button type="submit" id="save">Salvar e abrir Prumo</button><p id="error" role="alert"></p></form>
+<div class="panel"><strong>Conexão configurada</strong><small id="target"></small><small>A chave salva fica no perfil local do Windows. Deixe o campo vazio para testar e manter a chave existente. Ela não é incluída no executável.</small></div>
+<button type="button" id="validate">Testar chave e OCR</button><button type="submit" id="save">Salvar e abrir Prumo</button><p id="error" role="status" aria-live="polite"></p></form>
 <script src="settings.js"></script></body></html>
 HTML
 
@@ -375,14 +439,33 @@ cat > "$STAGE/electron/settings.js" <<'SETTINGS'
 (async () => {
   const $ = id => document.getElementById(id);
   const existing = await window.prumo.getConfig();
-  $('target').textContent = `${existing.remoteUrl} · OpenJev ${existing.port} (${existing.model}) · Metis no OpenJev ${existing.port}`;
+  $('target').textContent = `${existing.remoteUrl} · OCR CAT na porta 19202 · chave validada automaticamente ao iniciar`;
+  if (existing.startupNotice) $('error').textContent = existing.startupNotice;
   $('key').required = !existing.keyConfigured;
   $('key').placeholder = existing.keyConfigured ? 'Chave salva; deixe vazio para manter' : 'Cole apenas a chave';
+  $('validate').addEventListener('click', async () => {
+    $('error').textContent = '';
+    $('validate').disabled = true;
+    $('validate').textContent = 'Testando conexão...';
+    try {
+      const result = await window.prumo.validateConfig({ key: $('key').value });
+      if (!result.ok) throw new Error(result.error || 'Falha na validação.');
+      $('error').textContent = result.message;
+      $('error').style.color = '#9ee0b0';
+    } catch (error) {
+      $('error').textContent = error.message;
+      $('error').style.color = '#ff9292';
+    } finally {
+      $('validate').disabled = false;
+      $('validate').textContent = 'Testar chave e OCR';
+    }
+  });
   $('form').addEventListener('submit', async (event) => {
     event.preventDefault();
     $('error').textContent = '';
+    $('error').style.color = '#ff9292';
     $('save').disabled = true;
-    $('save').textContent = 'Abrindo...';
+    $('save').textContent = 'Validando e abrindo...';
     try {
       const result = await window.prumo.saveConfig({ key: $('key').value });
       if (!result.ok) throw new Error(result.error || 'Falha ao salvar');
