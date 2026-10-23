@@ -70,9 +70,9 @@
           <div id="portalLoginList" class="portal-login-list"><div class="empty-table">Consultando sessões salvas…</div></div>
           <p class="portal-login-storage">Cookies e tokens da sessão ficam em arquivo local com acesso restrito à conta do sistema. Remover a sessão exige novo login na próxima captura.</p>
         </section>
-        <section class="settings-section"><div class="settings-section-head"><div><h3>Memória do workspace</h3><p>Carregue ou consolide dados na unidade Metis configurada.</p></div></div>
-          <div class="memory-summary"><span class="memory-orb">M</span><span><strong id="memoryCount">4 memórias ativas</strong><small>Guardadas localmente neste navegador.</small></span><button id="manageMemory" class="text-button" type="button">Gerenciar</button></div>
-          <div class="metis-actions"><button id="loadMetisMemory" class="button-secondary button-sm" type="button">Carregar unidade</button><button id="saveMetisMemory" class="button-secondary button-sm" type="button">Consolidar memória</button></div>
+        <section class="settings-section"><div class="settings-section-head"><div><h3>Memória do workspace</h3><p>Regras operacionais guardadas localmente e enviadas como contexto às conversas.</p></div></div>
+          <div class="memory-summary"><span class="memory-orb">M</span><span><strong id="memoryCount">4 memórias ativas</strong><small id="memoryStorageSummary">Memórias guardadas neste navegador.</small></span><button id="manageMemory" class="text-button" type="button">Gerenciar</button></div>
+          <div class="metis-actions" id="memorySyncActions"><button id="loadMetisMemory" class="button-secondary button-sm" type="button">Carregar unidade</button><button id="saveMetisMemory" class="button-secondary button-sm" type="button">Sincronizar memórias</button></div>
         </section>
         <div class="settings-note"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M10 9v4M10 6.5h.01"/></svg><span>Configuração operacional e prompts de rotina ficam fora da interface, no arquivo local do servidor.</span></div>
       </div>
@@ -80,9 +80,9 @@
     </dialog>
 
     <dialog class="memory-dialog" id="memoryDialog" aria-labelledby="memoryTitle">
-      <form method="dialog" class="dialog-top"><div><span class="dialog-kicker">METIS MEMORY</span><h2 id="memoryTitle">Memórias do workspace</h2></div><button class="icon-button" value="cancel" aria-label="Fechar"><svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></svg></button></form>
-      <div class="dialog-content"><p class="memory-intro">Contexto operacional para as análises. Edite ou remova qualquer memória; itens ainda não validados aparecem sinalizados.</p><div id="memoryList" class="memory-list"></div><form id="addMemoryForm" class="add-memory-form"><label class="field-label" for="memoryInput">Adicionar uma memória</label><div class="input-with-action"><input id="memoryInput" maxlength="220" placeholder="Ex.: conferir validade das certidões antes de fechar a proposta" /><button class="button-primary" type="submit">Adicionar</button></div></form></div>
-      <div class="dialog-actions"><span class="memory-storage-note">Salvas neste navegador até conectar a persistência Metis.</span><span class="dialog-spacer"></span><button class="button-primary" value="cancel">Concluído</button></div>
+      <form method="dialog" class="dialog-top"><div><span class="dialog-kicker">MEMÓRIA LOCAL</span><h2 id="memoryTitle">Memórias do workspace</h2></div><button class="icon-button" value="cancel" aria-label="Fechar"><svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></svg></button></form>
+      <div class="dialog-content"><p class="memory-intro" id="memoryDialogIntro">Memórias operacionais ficam salvas neste navegador e são incluídas no contexto do assistente. CATs e documentos são lidos dos registros atuais do workspace.</p><div id="memoryList" class="memory-list"></div><form id="addMemoryForm" class="add-memory-form"><label class="field-label" for="memoryInput">Adicionar uma memória</label><div class="input-with-action"><input id="memoryInput" maxlength="220" placeholder="Ex.: conferir validade das certidões antes de fechar a proposta" /><button class="button-primary" type="submit">Adicionar</button></div></form></div>
+      <div class="dialog-actions"><span class="memory-storage-note memory-sync-status" id="memorySyncStatus" aria-live="polite">Pronto para sincronizar com Metis.</span><span class="dialog-spacer"></span><button class="button-primary" value="cancel">Concluído</button></div>
     </dialog>
     <input id="pdfUpload" type="file" accept="application/pdf,.pdf" hidden />
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>

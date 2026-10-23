@@ -1,0 +1,21 @@
+[Unit]
+Description=Prumo local CAT OCR (Tesseract.js)
+Wants=local-port-router.service
+After=network.target local-port-router.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/icarogdo/prumo-licitacoes
+Environment=HOME=/home/icarogdo
+Environment=PRUMO_OCR_HOST=127.0.0.1
+Environment=PRUMO_OCR_PORT=19202
+UMask=0077
+ExecStart=/usr/bin/node /home/icarogdo/prumo-licitacoes/local-ocr-server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=0
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

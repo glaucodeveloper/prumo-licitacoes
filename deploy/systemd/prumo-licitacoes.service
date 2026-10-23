@@ -1,0 +1,21 @@
+[Unit]
+Description=Prumo Licitações local server
+Wants=cognoscere.service cognoscere-system-model.service prumo-local-ocr.service
+After=network.target cognoscere.service cognoscere-system-model.service prumo-local-ocr.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/prumo-licitacoes
+Environment=HOME=%h
+Environment=PRUMO_HOST=127.0.0.1
+Environment=PORT=8877
+UMask=0077
+ExecStart=/usr/bin/node %h/prumo-licitacoes/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

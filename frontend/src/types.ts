@@ -45,6 +45,7 @@ export interface CatRecord extends LocalRecord {
   professionals?: CatProfessionalAssignment[];
   professionalProfileIds?: string[];
   professionalAnalysis?: LocalRecord;
+  customFields?: Array<{ id: string; label: string; value: string }>;
 }
 
 export interface ProfessionalProfile extends LocalRecord {
@@ -85,6 +86,7 @@ export interface AssistantMessage extends LocalRecord {
   diagnostic?: boolean;
   diagnosticNote?: string;
   documentText?: string;
+  attachments?: Array<{ id: string; name: string; type: string; size: number; usedAsCat?: boolean }>;
 }
 
 export interface PrumoState extends LocalRecord {
