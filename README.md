@@ -82,6 +82,19 @@ As chaves da NVIDIA permanecem no servidor e não são devolvidas ao navegador.
 
 Referências cadastrais preliminares: [Confidence](https://casadosdados.com.br/solucao/cnpj/confidence-construtora-ltda-28863854000110) e [Isocon](https://atlaspublico.com.br/empresa/47316277000191). Use comprovante oficial atualizado.
 
+## Aplicativo Android
+
+O APK Android é um cliente WebView do Prumo publicado no roteador HTTPS do projeto. Na primeira abertura, informe somente a chave de acesso do ngrok; o endereço e o servidor já vêm configurados no aplicativo. A chave fica no armazenamento privado do app, não é embutida no APK, e a sessão de login é estabelecida pelo roteador.
+
+Para compilar uma nova versão, configure a assinatura local em `android/keystore.properties` (arquivo ignorado pelo Git) e execute:
+
+```sh
+cd android
+./gradlew assembleRelease
+```
+
+O APK assinado sai em `android/app/build/outputs/apk/release/app-release.apk`. Preserve o keystore local `~/.config/prumo/android-release.p12` para manter a identidade de assinatura nas atualizações. O aplicativo exige Android 8.0 (API 26) ou superior e conexão com o servidor Prumo publicado.
+
 ## Arquivos
 
 - `frontend/src/main.ts`: entrada TypeScript do frontend.
