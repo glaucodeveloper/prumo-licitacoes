@@ -116,7 +116,6 @@ export interface PrumoState extends LocalRecord {
   selectedCat: LocalRecord | null;
   selectedProfessionalProfile: string;
   settings: LocalRecord;
-  demoBannerVisible: boolean;
 }
 
 export interface AssistantChatRequest {

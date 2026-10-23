@@ -26,8 +26,8 @@
         <div class="nav-caption">ESPAÇO DE TRABALHO</div>
         <nav class="nav-list">
           <button class="nav-link active" data-page="assistente" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v9H9l-4 3v-3H3z"/><path d="M6.5 8h7M6.5 10.5h4.5"/></svg><span>Assistente</span><span class="nav-dot"></span></button>
-          <button class="nav-link" data-page="editais" type="button"><svg viewBox="0 0 20 20"><path d="M5 2.75h7l3 3v11.5H5z"/><path d="M12 3v3h3M7.5 9h5M7.5 11.5h5M7.5 14h3"/></svg><span>Editais</span><span class="nav-count" id="noticeNavCount">3</span></button>
-          <button class="nav-link" data-page="propostas" type="button"><svg viewBox="0 0 20 20"><path d="M3.5 5.5h13M5 3.5h10v13H5z"/><path d="m7.5 10 1.8 1.8 3.7-3.9"/></svg><span>Propostas</span><span class="nav-count">2</span></button>
+          <button class="nav-link" data-page="editais" type="button"><svg viewBox="0 0 20 20"><path d="M5 2.75h7l3 3v11.5H5z"/><path d="M12 3v3h3M7.5 9h5M7.5 11.5h5M7.5 14h3"/></svg><span>Editais</span><span class="nav-count" id="noticeNavCount" hidden></span></button>
+          <button class="nav-link" data-page="propostas" type="button"><svg viewBox="0 0 20 20"><path d="M3.5 5.5h13M5 3.5h10v13H5z"/><path d="m7.5 10 1.8 1.8 3.7-3.9"/></svg><span>Propostas</span><span class="nav-count" id="proposalNavCount" hidden></span></button>
           <button class="nav-link" data-page="cotacoes" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v11H3z"/><path d="M3 8h14M7 8v7.5M12 8v7.5"/><path d="M6 2.5v2M14 2.5v2"/></svg><span>Itens e cotações</span></button>
           <button class="nav-link" data-page="cats" type="button"><svg viewBox="0 0 20 20"><path d="M4 3.5h12v13H4z"/><path d="M7 7h6M7 10h6M7 13h3"/><path d="m13 14 1.2 1.2L17 12.5"/></svg><span>CATs técnicas</span><span class="nav-dot"></span></button>
           <button class="nav-link" data-page="perfis-profissionais" type="button"><svg viewBox="0 0 20 20"><circle cx="10" cy="6.5" r="3"/><path d="M4 17c.6-3.2 2.6-4.8 6-4.8s5.4 1.6 6 4.8"/><path d="m14.5 4.5 1.2 1.2L18 3.3"/></svg><span>Perfis profissionais</span><span class="nav-dot"></span></button>
@@ -42,7 +42,7 @@
 
         <div class="sidebar-bottom">
           <div class="connection-card dev-only">
-            <div class="connection-title"><span>CONEXÕES</span><span class="demo-pill">LOCAL</span></div>
+            <div class="connection-title"><span>CONEXÕES</span></div>
             <div class="connection-row"><span class="service-led neutral"></span><span>OpenJev System One</span><small id="openjevStatus">ajustar</small></div>
             <div class="connection-row"><span class="service-led neutral"></span><span>Metis / Cognoscere</span><small id="metisStatus">desativado</small></div>
             <div class="connection-row"><span class="service-led neutral"></span><span>Modelo do assistente</span><small id="assistantStatus">NVIDIA</small></div>

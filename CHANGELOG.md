@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.3 — 23 de outubro de 2026
+
+- Remove registros e memórias fictícias do workspace inicial.
+- Mostra o progresso de consulta aos portais oficiais e mantém fontes independentes em paralelo; uma fonte pendente ou bloqueada não pausa as demais.
+
 ## 1.0.0 — 23 de outubro de 2026
 
 Primeira versão desktop do Prumo Licitações para Windows x64.

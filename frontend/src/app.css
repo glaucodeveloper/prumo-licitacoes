@@ -392,6 +392,27 @@ html:not(.dev-mode) .dev-only { display: none !important; }
 .capture-privacy { margin: 9px 0 0; color: #929b95; font-size: 8px; line-height: 1.45; }
 .capture-live { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; padding: 9px 10px; border: 1px solid #e6ece8; border-radius: 8px; color: #5d7567; background: #fff; font-size: 9px; line-height: 1.45; }
 .capture-live svg { width: 13px; height: 13px; flex: 0 0 13px; }
+.portal-progress-card { margin-top: 10px; padding: 11px 12px; border: 1px solid #dfe8e2; border-radius: 9px; background: #fff; }
+.portal-progress-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.portal-progress-card > header > span { display: grid; gap: 3px; min-width: 0; }
+.portal-progress-card header strong { color: #445a4c; font-size: 9px; font-weight: 600; }
+.portal-progress-card header small { color: #89958d; font-size: 8px; line-height: 1.45; }
+.portal-progress-card header b { color: #537b63; font: 9px var(--mono); }
+.portal-progress-track { height: 4px; overflow: hidden; margin: 8px 0 7px; border-radius: 999px; background: #edf1ee; }
+.portal-progress-track i { display: block; height: 100%; border-radius: inherit; background: #5b8b6b; transition: width .25s ease; }
+.portal-progress-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.portal-progress-source { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f0f2f0; }
+.portal-progress-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #c4cbc6; }
+.portal-progress-source.active .portal-progress-dot { background: #c38b43; box-shadow: 0 0 0 3px #f8f0e4; animation: portal-progress-pulse 1.3s ease-in-out infinite; }
+.portal-progress-source.pending .portal-progress-dot { background: #8d9b91; box-shadow: 0 0 0 3px #eef2ef; }
+.portal-progress-source.done .portal-progress-dot { background: #5b8b6b; }
+.portal-progress-source.attention .portal-progress-dot { background: #b7754d; }
+.portal-progress-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.portal-progress-copy strong { color: #4d5c52; font-size: 8px; font-weight: 600; }
+.portal-progress-copy small { overflow-wrap: anywhere; color: #929b95; font-size: 8px; line-height: 1.35; }
+.portal-progress-status { flex: 0 0 auto; color: #7a887f; font-size: 8px; }
+@keyframes portal-progress-pulse { 50% { box-shadow: 0 0 0 5px rgb(195 139 67 / 8%); } }
+@media (prefers-reduced-motion: reduce) { .portal-progress-source.active .portal-progress-dot { animation: none; } .portal-progress-track i { transition: none; } }
 .capture-report { margin-top: 12px; border-top: 1px solid #e8ede9; }
 .capture-report-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 14px; padding: 10px 1px 7px; }
 .capture-report-head strong { color: #4b5f52; font-size: 9px; font-weight: 600; }

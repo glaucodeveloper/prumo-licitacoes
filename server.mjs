@@ -169,6 +169,7 @@ const QUERY_OPTIONS = {
 };
 
 let captureInProgress = false;
+let captureProgress = null;
 let rerunAfterCurrentCapture = false;
 let automationState = {
   enabled: false, intervalHours: 24, config: null, nextRunAt: null,
@@ -2430,7 +2431,7 @@ async function collectLicitation(company, cnaes, days, authorization, origin, mo
   }
 }
 
-async function collectAll(payload, authorization = OPENJEV_AUTHORIZATION) {
+async function collectAll(payload, authorization = OPENJEV_AUTHORIZATION, onProgress = () => {}) {
   const openjevOrigin = OPENJEV_ORIGIN;
   const openjevModel = OPENJEV_MODEL;
   const portalKeys = [...new Set((payload.portals || []).filter((key) => Object.hasOwn(SOURCES, key)))];
@@ -2441,47 +2442,81 @@ async function collectAll(payload, authorization = OPENJEV_AUTHORIZATION) {
   const portalSessions = Object.fromEntries(await Promise.all(portalKeys.map(async (key) => [key, await readPortalSession(key)])));
   const collected = [];
   const sources = {};
-  if (portalKeys.includes('licitacoes-e')) {
-    for (const company of companies) {
-      try {
-        const result = await collectLicitation(company, company.cnaes, days, authorization, openjevOrigin, openjevModel, portalSessions['licitacoes-e']);
-        collected.push(...result.items.map((item) => ({ ...item, company: company.id })));
-        const prior = sources['licitacoes-e'] || { status: 'ok', url: BB_URL, scanned: 0, captured: 0, warnings: [] };
-        prior.scanned += result.scanned;
-        prior.captured += result.items.length;
-        if (result.warning) prior.warnings.push(`${company.name}: ${result.warning}`);
-        if (result.blocked) prior.status = 'blocked';
-        else if (result.partial && prior.status === 'ok') prior.status = 'partial';
-        sources['licitacoes-e'] = prior;
-      } catch (error) {
-        const prior = sources['licitacoes-e'] || { status: 'error', url: BB_URL, scanned: 0, captured: 0, warnings: [] };
-        prior.status = 'partial'; prior.warnings.push(`${company.name}: ${error.message}`);
-        sources['licitacoes-e'] = prior;
+  const progress = {
+    startedAt: new Date().toISOString(), stage: 'starting', currentPortalKey: '',
+    completedPortals: 0, totalPortals: portalKeys.length, processedNotices: 0, savedNotices: 0, totalNotices: 0,
+    portals: portalKeys.map((key) => ({ key, status: 'waiting', listed: null, scanned: 0, captured: 0, message: 'Aguardando consulta' })),
+  };
+  const publishProgress = (stage, currentPortalKey = progress.currentPortalKey, message = '') => {
+    progress.stage = stage;
+    progress.currentPortalKey = currentPortalKey;
+    if (message) progress.message = message;
+    progress.updatedAt = new Date().toISOString();
+    progress.completedPortals = progress.portals.filter((portal) => ['saving', 'complete', 'partial', 'blocked', 'error'].includes(portal.status)).length;
+    onProgress({ ...progress, portals: progress.portals.map((portal) => ({ ...portal })) });
+  };
+  const setPortalProgress = (key, status, details = {}, message = '') => {
+    const portal = progress.portals.find((entry) => entry.key === key);
+    if (!portal) return;
+    Object.assign(portal, details, { status, ...(message ? { message } : {}) });
+    const activePortal = progress.portals.find((entry) => entry.status === 'running') || progress.portals.find((entry) => entry.status === 'saving');
+    const stage = activePortal?.status === 'running' ? 'querying' : activePortal ? 'saving' : 'reading';
+    publishProgress(stage, activePortal?.key || '', message);
+  };
+  publishProgress('starting', '', 'Preparando consulta às fontes selecionadas');
+  await mapConcurrent(portalKeys, 3, async (portalKey) => {
+    if (portalKey === 'licitacoes-e') {
+      setPortalProgress(portalKey, 'running', {}, 'Consultando Licitações-e');
+      for (const company of companies) {
+        try {
+          const result = await collectLicitation(company, company.cnaes, days, authorization, openjevOrigin, openjevModel, portalSessions[portalKey]);
+          collected.push(...result.items.map((item) => ({ ...item, company: company.id })));
+          const prior = sources[portalKey] || { status: 'ok', url: BB_URL, scanned: 0, captured: 0, warnings: [] };
+          prior.scanned += result.scanned;
+          prior.captured += result.items.length;
+          if (result.warning) prior.warnings.push(`${company.name}: ${result.warning}`);
+          if (result.blocked) prior.status = 'blocked';
+          else if (result.partial && prior.status === 'ok') prior.status = 'partial';
+          sources[portalKey] = prior;
+        } catch (error) {
+          const prior = sources[portalKey] || { status: 'error', url: BB_URL, scanned: 0, captured: 0, warnings: [] };
+          prior.status = 'partial'; prior.warnings.push(`${company.name}: ${error.message}`);
+          sources[portalKey] = prior;
+        }
+        if (sources[portalKey]?.status === 'blocked') break;
       }
-      if (sources['licitacoes-e']?.status === 'blocked') break;
+      const source = sources[portalKey] || { status: 'error', scanned: 0, captured: 0 };
+      const status = source.status === 'blocked' ? 'blocked' : source.status === 'partial' ? 'partial' : 'saving';
+      setPortalProgress(portalKey, status, { scanned: source.scanned || 0, captured: source.captured || 0 }, status === 'saving' ? 'Dados localizados; aguardando salvamento sem pausar a fila' : status === 'blocked' ? 'Portal exige intervenção humana' : 'Consulta parcial; veja os avisos');
+      return;
     }
-  }
-  if (portalKeys.includes('pncp-nacional')) {
-    try {
-      const result = await collectPncpNational(companies, authorization, openjevOrigin, openjevModel, days);
-      collected.push(...result.output);
-      sources['pncp-nacional'] = {
-        status: result.status,
-        url: SOURCES['pncp-nacional'].url,
-        listed: result.listed,
-        scanned: result.scanned,
-        captured: result.captured,
-        pagesFetched: result.pagesFetched,
-        modalities: result.modalities,
-        sourceUpdatedAt: result.sourceUpdatedAt,
-        warnings: result.warnings,
-      };
-    } catch (error) {
-      sources['pncp-nacional'] = { status: 'error', url: SOURCES['pncp-nacional'].url, listed: 0, scanned: 0, captured: 0, error: error.message };
+
+    if (portalKey === 'pncp-nacional') {
+      setPortalProgress(portalKey, 'running', {}, 'Consultando API pública nacional do PNCP');
+      try {
+        const result = await collectPncpNational(companies, authorization, openjevOrigin, openjevModel, days);
+        collected.push(...result.output);
+        sources[portalKey] = {
+          status: result.status,
+          url: SOURCES[portalKey].url,
+          listed: result.listed,
+          scanned: result.scanned,
+          captured: result.captured,
+          pagesFetched: result.pagesFetched,
+          modalities: result.modalities,
+          sourceUpdatedAt: result.sourceUpdatedAt,
+          warnings: result.warnings,
+        };
+        const status = result.status === 'partial' ? 'partial' : 'saving';
+        setPortalProgress(portalKey, status, { listed: result.listed || 0, scanned: result.scanned || 0, captured: result.captured || 0 }, status === 'saving' ? 'Dados localizados; aguardando salvamento sem pausar a fila' : 'Consulta parcial; veja os avisos');
+      } catch (error) {
+        sources[portalKey] = { status: 'error', url: SOURCES[portalKey].url, listed: 0, scanned: 0, captured: 0, error: error.message };
+        setPortalProgress(portalKey, 'error', {}, 'Falha ao consultar PNCP');
+      }
+      return;
     }
-  }
-  for (const portalKey of ['transparencia-ba', 'transparencia-mg', 'transparencia-rj']) {
-    if (!portalKeys.includes(portalKey)) continue;
+
+    setPortalProgress(portalKey, 'running', {}, `Consultando ${SOURCES[portalKey].name}`);
     try {
       const result = await collectStateTransparency(portalKey, companies, authorization, openjevOrigin, openjevModel);
       collected.push(...result.output);
@@ -2494,16 +2529,26 @@ async function collectAll(payload, authorization = OPENJEV_AUTHORIZATION) {
         sourceUpdatedAt: result.sourceUpdatedAt,
         warnings: result.warnings,
       };
+      const status = result.status === 'partial' ? 'partial' : 'saving';
+      setPortalProgress(portalKey, status, { listed: result.listed || 0, scanned: result.scanned || 0, captured: result.captured || 0 }, status === 'saving' ? 'Dados localizados; aguardando salvamento sem pausar a fila' : 'Consulta parcial; veja os avisos');
     } catch (error) {
       sources[portalKey] = { status: 'error', url: SOURCES[portalKey].url, scanned: 0, listed: 0, captured: 0, error: error.message };
+      setPortalProgress(portalKey, 'error', {}, `Falha ao consultar ${SOURCES[portalKey].name}`);
     }
-  }
+  });
   const items = [];
+  progress.totalNotices = collected.length;
+  publishProgress(collected.length ? 'saving' : 'finalizing', '', collected.length ? `Salvando ${collected.length} edital(is) e consultando anexos oficiais` : 'Nenhum edital compatível; finalizando relatório das fontes');
   const savedItems = await mapConcurrent(collected, 3, async (item) => {
     try {
       const saved = await saveCapture(item, portalSessions);
+      progress.processedNotices += 1;
+      if (saved) progress.savedNotices += 1;
+      publishProgress('saving', item.portalKey, `Salvando edital ${progress.processedNotices} de ${progress.totalNotices} e anexos oficiais`);
       return { item, saved };
     } catch (error) {
+      progress.processedNotices += 1;
+      publishProgress('saving', item.portalKey, `Processando edital ${progress.processedNotices} de ${progress.totalNotices}`);
       return { item, error };
     }
   });
@@ -2523,6 +2568,19 @@ async function collectAll(payload, authorization = OPENJEV_AUTHORIZATION) {
       if (source) source.warnings = [...(source.warnings || []), `${item.id}: não foi possível salvar o JSON local (${error.message}).`];
     }
   }
+  for (const portal of progress.portals) {
+    if (['error', 'blocked'].includes(portal.status)) continue;
+    const source = sources[portal.key] || {};
+    const status = source.status === 'partial' ? 'partial' : source.status === 'blocked' ? 'blocked' : source.status === 'error' ? 'error' : 'complete';
+    setPortalProgress(portal.key, status, {
+      listed: source.listed ?? portal.listed,
+      scanned: source.scanned ?? portal.scanned,
+      captured: source.captured ?? portal.captured,
+      snapshotsSaved: source.snapshotsSaved || 0,
+      documentsDownloaded: source.documentsDownloaded || 0,
+    }, status === 'complete' ? 'Consulta concluída' : status === 'partial' ? 'Consulta parcial; veja os avisos' : 'Consulta exige intervenção');
+  }
+  publishProgress('complete', '', 'Consulta finalizada; relatório pronto');
   return { collectedAt: new Date().toISOString(), items, sources, companies: companies.map((item) => ({ id: item.id, name: item.name, verifiedCodes: item.cnaes.map((cnae) => cnae.code) })) };
 }
 
@@ -2553,6 +2611,7 @@ function publicAutomationStatus(since = '') {
     lastStatus: automationState.lastStatus,
     lastError: automationState.lastError,
     busy: captureInProgress,
+    progress: captureInProgress ? captureProgress : null,
     lastResultAt: automationState.latestResult?.collectedAt || null,
   };
   if (automationState.latestResult && (!since || automationState.latestResult.collectedAt > since)) {
@@ -2566,13 +2625,14 @@ function publicAutomationStatus(since = '') {
 async function runBackgroundCollection(reason = 'schedule') {
   if (!automationState.enabled || !automationState.config || captureInProgress) return false;
   captureInProgress = true;
+  captureProgress = null;
   automationState.lastStartedAt = new Date().toISOString();
   automationState.lastStatus = 'running';
   automationState.lastError = '';
   automationState.nextRunAt = null;
   await persistAutomationState().catch(() => {});
   try {
-    const result = await collectAll(automationState.config);
+    const result = await collectAll(automationState.config, OPENJEV_AUTHORIZATION, (progress) => { captureProgress = progress; });
     automationState.latestResult = result;
     automationState.lastRunAt = result.collectedAt;
     const sourceStatuses = Object.values(result.sources || {}).map((source) => source.status);
@@ -2584,6 +2644,7 @@ async function runBackgroundCollection(reason = 'schedule') {
     automationState.lastError = error.message || 'Falha na rotina automática.';
   } finally {
     captureInProgress = false;
+    captureProgress = null;
     if (automationState.enabled) automationState.nextRunAt = new Date(Date.now() + automationState.intervalHours * 3600000).toISOString();
     await persistAutomationState().catch(() => {});
     process.stdout.write(`Rotina OpenJev ${reason}: ${automationState.lastStatus}\n`);
@@ -3333,14 +3394,16 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === '/api/collect' && request.method === 'POST') {
     if (captureInProgress) return json(response, 409, { error: 'Já existe uma captura em andamento no servidor.' });
     captureInProgress = true;
+    captureProgress = { startedAt: new Date().toISOString(), stage: 'starting', currentPortalKey: '', completedPortals: 0, totalPortals: 0, processedNotices: 0, savedNotices: 0, totalNotices: 0, portals: [], message: 'Preparando consulta às fontes selecionadas' };
     try {
       const payload = await readBody(request);
-      const result = await collectAll(payload);
+      const result = await collectAll(payload, OPENJEV_AUTHORIZATION, (progress) => { captureProgress = progress; });
       return json(response, 200, result);
     } catch (error) {
       return json(response, 400, { error: error.message || 'Falha na captura.' });
     } finally {
       captureInProgress = false;
+      captureProgress = null;
       void drainLoginCapture();
     }
   }
