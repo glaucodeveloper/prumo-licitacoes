@@ -91,7 +91,7 @@ NODE
 
 cat > "$STAGE/electron/main.cjs" <<'MAIN'
 'use strict';
-const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell, session } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
@@ -114,6 +114,15 @@ let startTask = null;
 let config = null;
 
 function userFile(name) { return path.join(app.getPath('userData'), name); }
+async function clearFirstRunBrowserData(origin) {
+  const marker = userFile('browser-storage-cleanup-v1');
+  if (fs.existsSync(marker)) return;
+  await session.defaultSession.clearStorageData({
+    origin,
+    storages: ['cookies', 'localstorage'],
+  });
+  fs.writeFileSync(marker, new Date().toISOString() + '\n', { mode: 0o600 });
+}
 function savedConfig() {
   try { return JSON.parse(fs.readFileSync(userFile('prumo-remote.json'), 'utf8')); }
   catch { return null; }
@@ -257,6 +266,7 @@ async function startBackend() {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     if (!ready) throw new Error(`Node não iniciou. Consulte ${userFile('prumo.log')}`);
+    await clearFirstRunBrowserData(new URL(baseUrl).origin);
     mainWindow = new BrowserWindow({
       width: 1400, height: 900, minWidth: 850, minHeight: 580,
       show: false, backgroundColor: '#101218',

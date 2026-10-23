@@ -1,7 +1,39 @@
 import { esc, renderMarkdownResponse } from './components';
 import type { AssistantChatRequest, AssistantChatResponse, AssistantMessage, CatRecord, CompanyId, CompanyProfile, PrumoState } from './types';
 
-export function startApplication(): void {
+const INITIAL_BROWSER_CLEANUP_MARKER = 'prumo-initial-browser-cleanup-v1';
+
+async function clearCookiesForCurrentOrigin(): Promise<void> {
+  const cookieStore = (window as any).cookieStore;
+  if (cookieStore?.getAll && cookieStore?.delete) {
+    const cookies = await cookieStore.getAll();
+    await Promise.all(cookies.map((cookie: any) => cookieStore.delete({
+      name: cookie.name,
+      ...(cookie.domain ? { domain: cookie.domain } : {}),
+      path: cookie.path || '/',
+    }).catch(() => {})));
+    return;
+  }
+  const names = document.cookie.split(';').map((entry) => entry.trim().split('=')[0]).filter(Boolean);
+  names.forEach((name) => {
+    document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`;
+  });
+}
+
+async function clearBrowserStorageOnce(): Promise<void> {
+  try {
+    if (localStorage.getItem(INITIAL_BROWSER_CLEANUP_MARKER) === 'done') return;
+    await clearCookiesForCurrentOrigin().catch(() => {});
+    localStorage.clear();
+    localStorage.setItem(INITIAL_BROWSER_CLEANUP_MARKER, 'done');
+  } catch (_) {
+    // Keep the app available if the browser blocks storage access; retry next startup.
+  }
+}
+
+export async function startApplication(): Promise<void> {
+  await clearBrowserStorageOnce();
 
   document.documentElement.classList.toggle('dev-mode', Boolean((import.meta as any).env?.DEV));
 
@@ -3749,6 +3781,12 @@ export function startApplication(): void {
         intakeProgressToast?.setAction('Retomar CAT', resumeIntake);
         return;
       }
+      if (savedCatRecord) {
+        const number = savedCatRecord.number;
+        closeIntake();
+        toast(`CAT ${number} salva no acervo. Abra a CAT na lista para revisar os dados.`);
+        return;
+      }
       intakeProgressToast?.dismiss();
       intakeProgressToast = createProgressToast(savedCatRecord ? 'Revisão CAT em segundo plano' : 'Cadastro CAT em segundo plano');
       intakeProgressToast.setPersistOnFinish(true);
@@ -4265,11 +4303,7 @@ export function startApplication(): void {
         cancelButton.hidden = true;
         autoSaveStatus.textContent = 'CAT salva automaticamente. As alterações desta revisão também são salvas automaticamente.';
         if (intakeMinimized) {
-          intakeProgressToast?.dismiss();
-          intakeProgressToast = createProgressToast('CAT salva automaticamente');
-          intakeProgressToast.setPersistOnFinish(true);
-          intakeProgressToast.setAction('Retomar revisão', resumeIntake);
-          intakeProgressToast.finish('Leitura e cadastro concluídos', false, `CAT ${cat.number} salva; retome para revisar os dados.`);
+          closeIntake();
         }
         toast(`CAT ${cat.number} salva automaticamente${assignedProfessionals.length ? ` e vinculada a ${assignedProfessionals.length} perfil(is) profissional(is)` : ''} de ${co.short}.`);
       } catch (error) {
