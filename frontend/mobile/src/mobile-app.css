@@ -1,0 +1,39 @@
+.app-shell.mobile-gated { display: none !important; }
+.prumo-mobile, .prumo-mobile body { min-width: 320px; min-height: 100%; }
+.mobile-connection-shell { position: fixed; z-index: 10000; inset: 0; display: grid; min-height: 100dvh; place-items: center; overflow: auto; padding: max(20px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom)); background: #f4f5f7; }
+.mobile-connection-card { width: min(100%, 470px); padding: clamp(22px, 6vw, 34px); border: 1px solid #e2e6e9; border-radius: 22px; background: #fff; box-shadow: 0 16px 55px rgb(29 38 48 / 9%); }
+.mobile-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
+.mobile-brand-mark { display: grid; width: 39px; height: 39px; place-items: center; border: 1px solid #d8dedb; border-radius: 11px; color: #344148; background: #f8faf9; }
+.mobile-brand-mark svg { width: 25px; height: 25px; stroke-width: 1.5; }
+.mobile-brand strong, .mobile-brand small { display: block; }
+.mobile-brand strong { font-size: 20px; font-weight: 700; letter-spacing: -.8px; line-height: 1; }
+.mobile-brand small { margin-top: 5px; color: #8c949d; font: 8px var(--mono); letter-spacing: .12em; }
+.mobile-connection-intro { margin: 35px 0 26px; }
+.mobile-connection-eyebrow { color: #728077; font: 9px var(--mono); letter-spacing: .12em; }
+.mobile-connection-intro h1 { margin: 9px 0 8px; color: #252b31; font-size: clamp(25px, 7vw, 31px); font-weight: 650; letter-spacing: -.8px; }
+.mobile-connection-intro p, .mobile-connection-help { color: #78828d; font-size: 13px; line-height: 1.6; }
+.mobile-connection-intro p { margin: 0; }
+.mobile-connection-card label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 650; }
+.mobile-key-field { position: relative; }
+.mobile-key-field input { width: 100%; height: 48px; padding: 0 84px 0 12px; border: 1px solid #dce1e5; border-radius: 9px; color: var(--ink); background: #fbfcfd; }
+.mobile-key-field input:focus { border-color: #7f9b89; outline: 3px solid rgb(91 137 105 / 13%); }
+.mobile-key-field button { position: absolute; top: 0; right: 6px; height: 48px; padding: 0 8px; border: 0; color: #69747d; background: transparent; font-size: 11px; font-weight: 600; }
+.mobile-connection-help { margin: 8px 0 17px; font-size: 11px; }
+.mobile-connect-button { width: 100%; min-height: 46px; border: 0; border-radius: 9px; color: #fff; background: #20252c; font-size: 13px; font-weight: 650; }
+.mobile-connect-button:disabled { opacity: .62; }
+.mobile-cancel-button { width: 100%; min-height: 40px; margin-top: 8px; border: 1px solid #e0e4e7; border-radius: 9px; color: #606a73; background: #fff; font-size: 12px; font-weight: 600; }
+.mobile-connection-status { min-height: 18px; margin: 12px 0 0; color: #68766e; font-size: 11px; line-height: 1.5; }
+.mobile-connection-card footer { margin-top: 19px; padding-top: 14px; border-top: 1px solid #edf0f2; color: #9aa2aa; font-size: 10px; }
+@media (max-width: 720px) {
+  .app-shell:not(.mobile-gated) { grid-template-columns: minmax(0, 1fr); min-height: 100dvh; }
+  .app-shell:not(.mobile-gated) .sidebar { position: fixed; z-index: 20; inset: auto 0 0; display: flex; width: 100%; height: auto; min-height: 0; flex-direction: row; overflow-x: auto; padding: 7px 8px max(7px, env(safe-area-inset-bottom)); border-top: 1px solid #e3e6ea; border-right: 0; }
+  .app-shell:not(.mobile-gated) .brand, .app-shell:not(.mobile-gated) .company-switcher, .app-shell:not(.mobile-gated) .nav-caption, .app-shell:not(.mobile-gated) .routine-box, .app-shell:not(.mobile-gated) .sidebar-bottom { display: none; }
+  .app-shell:not(.mobile-gated) .nav-list { display: flex; width: 100%; justify-content: space-around; gap: 2px; }
+  .app-shell:not(.mobile-gated) .nav-link { display: grid; width: 64px; min-width: 58px; height: 48px; justify-items: center; align-content: center; gap: 3px; padding: 3px 2px; font-size: 9px; }
+  .app-shell:not(.mobile-gated) .nav-link svg { width: 17px; height: 17px; }
+  .app-shell:not(.mobile-gated) .nav-link .nav-count { display: none; }
+  .app-shell:not(.mobile-gated) .main-area { min-width: 0; min-height: 100dvh; padding-bottom: 65px; }
+  .app-shell:not(.mobile-gated) .topbar { height: 52px; padding: 0 13px; }
+  .app-shell:not(.mobile-gated) .topbar-right .today-label, .app-shell:not(.mobile-gated) .topbar-right .top-separator, .app-shell:not(.mobile-gated) .work-profile { display: none; }
+  .app-shell:not(.mobile-gated) .page-container { padding: 18px 12px 28px; }
+}

@@ -84,7 +84,7 @@ Referências cadastrais preliminares: [Confidence](https://casadosdados.com.br/s
 
 ## Aplicativo Android
 
-O aplicativo Android é construído com Capacitor 8. A tela local pede somente a chave do roteador; `@capacitor/preferences` a guarda no armazenamento privado do app. O runtime Capacitor abre o workspace remoto no WebView nativo e o plugin `PrumoConnection` envia o cabeçalho que evita a tela intermediária do ngrok. O endereço e a porta ficam configurados no projeto; a chave não está embutida no APK.
+O aplicativo Android é construído com Capacitor 8 e empacota o frontend completo, inclusive estilos, páginas e leitor PDF. Na primeira abertura, pede somente a chave do roteador; `@capacitor/preferences` a guarda no armazenamento do app. O endereço e a porta do workspace já vêm configurados e a chave não está embutida no APK. As chamadas de API usam o `CapacitorHttp` nativo com a chave no cabeçalho, sem abrir a interface hospedada no servidor.
 
 Para compilar uma nova versão, configure a assinatura local em `frontend/android/keystore.properties` (arquivo ignorado pelo Git) e execute:
 
@@ -94,7 +94,7 @@ npm install
 npm run android:release
 ```
 
-`npm run android:release` gera o bundle local da tela de conexão, sincroniza a plataforma Capacitor e compila o APK assinado em `frontend/android/app/build/outputs/apk/release/app-release.apk`. Preserve o keystore `~/.config/prumo/android-release.p12` para manter a identidade de assinatura. O workspace e as APIs continuam exigindo conexão ao servidor Prumo e ao túnel configurado.
+`npm run android:release` gera o bundle completo do frontend e dos recursos PDF.js, sincroniza a plataforma Capacitor e compila o APK assinado em `frontend/android/app/build/outputs/apk/release/app-release.apk`. Preserve o keystore `~/.config/prumo/android-release.p12` para manter a identidade de assinatura. A interface abre localmente; dados e operações que usam o servidor exigem conexão ao Prumo e ao túnel configurado.
 
 ## Arquivos
 

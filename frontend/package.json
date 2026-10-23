@@ -1,12 +1,12 @@
 {
   "name": "prumo-licitacoes-frontend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:mobile": "vite build mobile --config mobile/vite.config.ts",
+    "build:mobile": "node mobile/prepare-mobile-html.mjs && vite build --config mobile/vite.config.ts && node mobile/copy-pdf-assets.mjs",
     "cap:sync": "npm run build:mobile && cap sync android",
     "android:release": "npm run cap:sync && cd android && ./gradlew assembleRelease",
     "preview": "vite preview"
