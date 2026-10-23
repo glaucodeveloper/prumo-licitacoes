@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.4 — 23 de outubro de 2026
+
+- Remove a confirmação de equipe do cadastro de CATs e elimina o campo legado de registros existentes.
+- Atualiza automaticamente o acervo ao salvar ou editar uma CAT, sem fechar a revisão.
+
 ## 1.0.3 — 23 de outubro de 2026
 
 - Remove registros e memórias fictícias do workspace inicial.

@@ -567,7 +567,7 @@ html:not(.dev-mode) .dev-only { display: none !important; }
 .quote-section-label { margin: 13px 0 5px; color: #89938c; font-size: 8px; }
 .cat-record-list { display: grid; gap: 10px; }
 .cat-record-card { min-width: 0; padding: 14px; border: 1px solid #e8ece9; border-radius: 10px; background: #fff; }
-.cat-record-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 30px 30px; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #edf0ee; }
+.cat-record-head { display: grid; grid-template-columns: 34px minmax(0, 1fr) 30px 30px; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #edf0ee; }
 .cat-record-title { display: grid; min-width: 0; gap: 4px; }
 .cat-record-title strong { color: #435148; font: 11px var(--mono); }
 .cat-record-title span { overflow-wrap: anywhere; color: #536058; font-size: 10px; font-weight: 600; line-height: 1.45; }
