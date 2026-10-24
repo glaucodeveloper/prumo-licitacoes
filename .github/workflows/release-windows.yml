@@ -39,8 +39,8 @@ jobs:
           name: Prumo Licitações ${{ steps.version.outputs.version }}
           body: >-
             Binários Windows x64 do Prumo Licitações (Setup e Portable).
-            A leitura de CAT prioriza NVIDIA, repete respostas curtas e usa OCR local como fallback quando a chamada falha.
-            A configuração valida o OCR local e a extração estruturada em JSON pelo MiniCPM.
+            A análise estruturada dos dados das CATs usa o endpoint NVIDIA configurado.
+            A leitura visual prioriza NVIDIA e usa OCR local como fallback.
           files: |
             output/electron-windows/Prumo-Licitacoes-Setup-${{ steps.version.outputs.version }}-x64.exe
             output/electron-windows/Prumo-Licitacoes-Portable-${{ steps.version.outputs.version }}-x64.exe

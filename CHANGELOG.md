@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.13 — 24 de outubro de 2026
+
+- Usa o endpoint NVIDIA configurado para estruturar dados-chave das páginas de CAT.
+- Preserva OCR e análises já salvas; não dispara reprocessamento automático de CATs existentes.
+- Publica Setup e Portable Windows x64.
+
 ## 1.0.12 — 24 de outubro de 2026
 
 - Prioriza NVIDIA na leitura OCR visual das páginas de CAT e usa Tesseract local como fallback quando a chamada NVIDIA falha.
