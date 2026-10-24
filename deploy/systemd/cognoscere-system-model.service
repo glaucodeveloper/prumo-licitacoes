@@ -1,0 +1,14 @@
+[Unit]
+Description=Cognoscere Internal Decision Model (MiniCPM5-2B)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/llama.cpp/llama-server -m %h/models/MiniCPM5-2B-GGUF/MiniCPM5-2B-Q4_K_M.gguf -c 4096 -b 256 -ngl 0 -np 1 --jinja --host 127.0.0.1 --port 19200 --alias minicpm5-2b --no-webui
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=0
+KillSignal=SIGINT
+
+[Install]
+WantedBy=default.target
