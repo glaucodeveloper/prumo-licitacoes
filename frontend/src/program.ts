@@ -1655,7 +1655,7 @@ export async function startApplication(): Promise<void> {
         : page.ocrNeedsReviewRefresh
             ? `Extração antiga · dados-chave serão refeitos${page.ocrReviewError ? ` · ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
           : page.ocrStatus === 'complete'
-            ? `OCR local atualizado · extração MiniCPM pendente${page.ocrReviewError ? `: ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
+            ? `OCR atualizado · extração MiniCPM pendente${page.ocrReviewError ? `: ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
           : page.ocr ? 'Texto OCR disponível' : 'Texto pesquisável do PDF';
     const excerpt = pageText
       ? `<article class="cat-page-note cat-page-excerpt"><header><span class="cat-note-pin">${page.number}</span><span><strong>Dados-chave da página</strong><small>${sourceLabel}</small></span></header><div class="cat-page-excerpt-body">${catPageExcerptMarkup(page)}</div></article>`
@@ -2358,7 +2358,7 @@ export async function startApplication(): Promise<void> {
         const reviewFailures = [];
         const stored = catReaderDocumentMeta.stored;
         const fileRecord = (state.companyDocuments || []).find((file) => file.id === catReaderDocumentMeta.file.id);
-        data.ocrStatusLabel = `lendo ${candidates.length} página(s) com OCR local…`;
+        data.ocrStatusLabel = `lendo ${candidates.length} página(s) com NVIDIA OCR; local como fallback…`;
         updateCatReaderOcrStatus(data);
         for (const pageRow of candidates) {
           pageRow.ocrStatus = 'queued';
@@ -2419,7 +2419,7 @@ export async function startApplication(): Promise<void> {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ fileName: catReaderDocumentMeta.file.name, pageNumber: pageRow.number, documentText: '', pages: dataUrls.map((dataUrl) => ({ page: pageRow.number, dataUrl, cropped: tablePage })) }),
                   signal: readSignal,
-                }), (elapsedSeconds) => data.progressToast?.update(`OCR local processando · página ${pageRow.number} · ${elapsedSeconds}s`, offset, candidates.length));
+                }), (elapsedSeconds) => data.progressToast?.update(`OCR NVIDIA/local em andamento · página ${pageRow.number} · ${elapsedSeconds}s`, offset, candidates.length));
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok) {
                   const error = new Error(result.error || `OCR HTTP ${response.status}`);
@@ -2431,7 +2431,7 @@ export async function startApplication(): Promise<void> {
                 return { result, recognized };
               }, {
                 signal: readSignal,
-                onRetry: (attempt, error, delayMs) => data.progressToast?.update(`Página ${pageRow.number}: OCR local falhou (${error?.message || 'falha temporária'}); tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s…`, offset, candidates.length),
+                onRetry: (attempt, error, delayMs) => data.progressToast?.update(`Página ${pageRow.number}: OCR NVIDIA/local falhou (${error?.message || 'falha temporária'}); tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s…`, offset, candidates.length),
               });
               const { result, recognized } = ocr;
               if (token !== catReaderLoadToken) return;
@@ -2541,8 +2541,8 @@ export async function startApplication(): Promise<void> {
         const currentReviewedPages = data.pages.filter((page) => page.imageDetected && stored.catOcrReviewModels?.[page.number] && stored.catOcrReviewVersions?.[page.number] === CAT_OCR_REVIEW_VERSION).length;
         const readablePages = data.pages.filter((page) => page.imageDetected && page.ocr).length;
         data.ocrStatusLabel = failures.length
-          ? `OCR local ${currentModelPages}/${imageCount} · dados-chave MiniCPM ${currentReviewedPages}/${imageCount}; falha nas páginas ${failures.join(', ')}`
-          : `OCR local ${currentModelPages}/${imageCount} · dados-chave Metis em ${currentReviewedPages}/${imageCount} página(s); ${readablePages} com texto legível`;
+          ? `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave MiniCPM ${currentReviewedPages}/${imageCount}; falha nas páginas ${failures.join(', ')}`
+          : `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave Metis em ${currentReviewedPages}/${imageCount} página(s); ${readablePages} com texto legível`;
         updateCatReaderOcrStatus(data);
         data.progressToast?.finish(failures.length
           ? `Leitura parcial · ${currentModelPages}/${imageCount} páginas adicionadas; falha nas páginas ${failures.join(', ')}.`
@@ -2575,7 +2575,7 @@ export async function startApplication(): Promise<void> {
     try {
       const ocrStatus = await fetch(appPath('/api/ocr/status'), { signal: AbortSignal.timeout(5000), cache: 'no-store' }).then(async (response) => response.ok ? response.json() : {}).catch(() => ({}));
       if (!ocrStatus.catPageConfigured || !ocrStatus.catReviewConfigured) {
-        throw new Error('O serviço OCR local ou o MiniCPM pelo ngrok não estão disponíveis.');
+        throw new Error('OCR NVIDIA/local ou MiniCPM pelo ngrok não estão disponíveis.');
       }
       const pdfjs = await loadPdfJs();
       pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdfjs/pdf.worker.compat.mjs', document.baseURI).href;
@@ -2638,14 +2638,14 @@ export async function startApplication(): Promise<void> {
                 let recognized = storedRawText;
                 let ocrResult: any = null;
                 if (needsFreshOcr) {
-                  if (!(ocrStatus.catPageConfigured ?? ocrStatus.configured)) throw new Error('OCR visual de CAT não está configurado no servidor.');
+                  if (!(ocrStatus.catPageConfigured ?? ocrStatus.configured)) throw new Error('OCR NVIDIA e fallback local de CAT não estão configurados no servidor.');
                   updateProgress(`OCR visual · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages}`, pageNumber - 1, pdf.numPages);
                   const dataUrls = await catPdfPageImages(page, true);
                   const ocr = await retryCatRead(async () => {
                     const response = await withProgressHeartbeat(() => fetch(appPath('/api/ocr/cat-page'), {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ fileName: file.name, pageNumber, documentText: '', pages: dataUrls.map((dataUrl) => ({ page: pageNumber, dataUrl, cropped: true })) }),
-                    }), (elapsedSeconds) => updateProgress(`OCR local processando · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages} · ${elapsedSeconds}s`, pageNumber - 1, pdf.numPages));
+                    }), (elapsedSeconds) => updateProgress(`OCR NVIDIA/local em andamento · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages} · ${elapsedSeconds}s`, pageNumber - 1, pdf.numPages));
                     const result = await response.json().catch(() => ({}));
                     if (!response.ok) {
                       const error = new Error(result.error || `OCR HTTP ${response.status}`);
@@ -2655,7 +2655,7 @@ export async function startApplication(): Promise<void> {
                     const text = catOcrResultText(result).replace(/---\s*P[aá]gina\s+\d+\s*---/gi, '').trim();
                     if (!text || catOcrTextNeedsRetry(text)) throw new Error('OCR não retornou texto legível suficiente.');
                     return { result, text };
-                  }, { onRetry: (attempt, error, delayMs) => updateProgress(`OCR local falhou (${error?.message || 'falha temporária'}); nova tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages}`, pageNumber - 1, pdf.numPages) });
+                  }, { onRetry: (attempt, error, delayMs) => updateProgress(`OCR NVIDIA/local falhou (${error?.message || 'falha temporária'}); nova tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages}`, pageNumber - 1, pdf.numPages) });
                   ocrResult = ocr.result;
                   recognized = ocr.text;
                   pagesRead += 1;
@@ -2687,7 +2687,8 @@ export async function startApplication(): Promise<void> {
                 pageRows.set(pageNumber, { number: pageNumber, text: pageText });
                 if (hasImage) ocrPages.add(pageNumber);
                 if (ocrResult) {
-                  pageModels[pageNumber] = ocrResult.model || CAT_PAGE_OCR_MODEL;
+                  // This field versions the page OCR pipeline for cache reuse; provider/model is reported separately.
+                  pageModels[pageNumber] = CAT_PAGE_OCR_MODEL;
                   pageConfidence[pageNumber] = Number(ocrResult.fields?.confidence) || 0.65;
                   retryAttempts[pageNumber] = (Number(retryAttempts[pageNumber]) || 0) + 1;
                 }
@@ -2710,7 +2711,7 @@ export async function startApplication(): Promise<void> {
             stored.catOcrPageErrors = pageErrors;
             await saveCompanyFileBlob(file.id, stored);
             file.indexed = catExtractedTextHasContent(stored.extractedText);
-            file.extractionNote = `Dados-chave do MiniCPM extraídos em ${Object.values(reviewVersions).filter((version) => version === CAT_OCR_REVIEW_VERSION).length}/${pagesWithSource} página(s) com texto; OCR local atualizado em ${stored.ocrPages.filter((number) => imagePages.includes(number)).length}/${imagePages.length} página(s) com imagem${failedForDocument.length ? `; falha nas páginas ${failedForDocument.join(', ')}` : ''}.`;
+            file.extractionNote = `Dados-chave do MiniCPM extraídos em ${Object.values(reviewVersions).filter((version) => version === CAT_OCR_REVIEW_VERSION).length}/${pagesWithSource} página(s) com texto; OCR NVIDIA/local atualizado em ${stored.ocrPages.filter((number) => imagePages.includes(number)).length}/${imagePages.length} página(s) com imagem${failedForDocument.length ? `; falha nas páginas ${failedForDocument.join(', ')}` : ''}.`;
             stored.extractionNote = file.extractionNote;
             saveState();
             updateProgress(`Página ${pageNumber} salva · OCR novo ${pagesRead} · fonte reutilizada ${pagesReused} · dados-chave extraídos ${pagesExtracted}`, pageNumber, pdf.numPages);
@@ -4016,7 +4017,7 @@ export async function startApplication(): Promise<void> {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ fileName: file.name, pageNumber: page.page, documentText: '', pages: [{ page: page.page, dataUrl }] }),
                     signal: intakeSignal,
-                    }), (elapsedSeconds) => intakeProgressToast?.update(`OCR local processando · página ${page.page} · ${elapsedSeconds}s`, offset, detectedImagePages.length));
+                    }), (elapsedSeconds) => intakeProgressToast?.update(`OCR NVIDIA/local em andamento · página ${page.page} · ${elapsedSeconds}s`, offset, detectedImagePages.length));
                     const responseBody = await response.json().catch(() => ({}));
                     if (!response.ok) {
                       const error = new Error(responseBody.error || `OCR HTTP ${response.status}`);
@@ -4029,7 +4030,7 @@ export async function startApplication(): Promise<void> {
                   }, {
                     signal: intakeSignal,
                     onRetry: (attempt, error, delayMs) => {
-                      const retryStatus = `OCR local não concluiu a página (${error?.message || 'falha temporária'}). Tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s…`;
+                      const retryStatus = `OCR NVIDIA/local não concluiu a página (${error?.message || 'falha temporária'}). Tentativa ${attempt + 1} em ${Math.ceil(delayMs / 1000)}s…`;
                       status.textContent = `Nova tentativa de OCR · página ${page.page}/${localDocument.pageCount}`;
                       updateIntakePage(page.page, retryStatus, 'processing');
                       intakeProgressToast?.update(`Tentativa ${attempt + 1} · OCR página ${page.page} · aguarda ${Math.ceil(delayMs / 1000)}s`, offset, detectedImagePages.length);
@@ -4090,6 +4091,7 @@ export async function startApplication(): Promise<void> {
             ocrRecord = {
               model: pageResults[0].result.model,
               provider: pageResults[0].result.provider,
+              providers: [...new Set(pageResults.map(({ result }) => result.provider).filter(Boolean))],
               pagesRead: pageResults.length,
               pagesReviewed: pageResults.filter((page) => page.reviewedText).length,
               pagesTotal: detectedImagePages.length,
@@ -4111,7 +4113,7 @@ export async function startApplication(): Promise<void> {
             };
             if (failedPages.length) ocrError = `OCR sem resposta nas páginas ${failedPages.join(', ')}`;
             if (reviewFailedPages.length) ocrError = [ocrError, `extração MiniCPM pendente nas páginas ${reviewFailedPages.join(', ')}`].filter(Boolean).join('; ');
-          } catch (error) { ocrError = error.message || 'OCR local indisponível.'; }
+          } catch (error) { ocrError = error.message || 'OCR NVIDIA/local indisponível.'; }
         } else if (!catPageOcrAvailable && detectedImagePages.length) {
           ocrError = `OCR não configurado para imagens nas páginas ${detectedImagePages.map((page) => page.page).join(', ')}`;
           intakeProgressToast?.finish(`Texto extraído; OCR não configurado para ${detectedImagePages.length} páginas com imagem.`, true);
@@ -4155,13 +4157,15 @@ export async function startApplication(): Promise<void> {
         const professionalNote = professionalAnalysis
           ? ` Análise única do documento integral: ${professionalAnalysis.professionals.length} profissional(is) identificado(s) por nome, com propriedades e páginas vinculadas.${professionalAnalysis.professionals.length ? '' : ' Nenhum nome pôde ser confirmado com segurança.'}`
           : professionalAnalysisError ? ` ${professionalAnalysisError}` : '';
+        const ocrProviderLabel = [...new Set(ocrRecord?.providers || [ocrRecord?.provider].filter(Boolean))]
+          .map((provider) => provider === 'nvidia-api' ? 'NVIDIA' : 'Tesseract local como fallback').join(' + ');
         const note = ocrRecord?.model
-          ? `OCR ${ocrRecord.model} leu ${ocrRecord.pagesRead || 1}${ocrRecord.pagesTotal ? ` de ${ocrRecord.pagesTotal}` : ''} página(s)${ocrRecord.pagesReviewed ? `; MiniCPM extraiu dados-chave de ${ocrRecord.pagesReviewed}` : ''}${Number(ocrRecord.fields?.confidence) ? ` · confiança média ${Math.round(ocrRecord.fields.confidence * 100)}%` : ''}${ocrError ? ` · ${ocrError}` : ''}. Os dados estruturados seguem na leitura do PDF e o OCR original fica preservado. Confira os campos e o documento; a CAT será salva automaticamente.${professionalNote}`
+          ? `OCR ${ocrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}) leu ${ocrRecord.pagesRead || 1}${ocrRecord.pagesTotal ? ` de ${ocrRecord.pagesTotal}` : ''} página(s)${ocrRecord.pagesReviewed ? `; MiniCPM extraiu dados-chave de ${ocrRecord.pagesReviewed}` : ''}${Number(ocrRecord.fields?.confidence) ? ` · confiança média ${Math.round(ocrRecord.fields.confidence * 100)}%` : ''}${ocrError ? ` · ${ocrError}` : ''}. Os dados estruturados seguem na leitura do PDF e o OCR original fica preservado. Confira os campos e o documento; a CAT será salva automaticamente.${professionalNote}`
           : ocrError
-            ? `OCR local não concluiu: ${ocrError}. ${extractedText ? 'O texto selecionável foi extraído localmente e usado para sugerir alguns campos.' : 'Confira e preencha os campos usando o PDF original.'} A CAT será salva automaticamente.${professionalNote}`
+            ? `OCR NVIDIA/local não concluiu: ${ocrError}. ${extractedText ? 'O texto selecionável foi extraído localmente e usado para sugerir alguns campos.' : 'Confira e preencha os campos usando o PDF original.'} A CAT será salva automaticamente.${professionalNote}`
             : extractedText
               ? `Texto selecionável extraído localmente${detectedImagePages.length ? `; imagem detectada nas páginas ${detectedImagePages.map((page) => page.page).join(', ')}` : ''}${imagePageLimit ? '; páginas posteriores ao limite de leitura automática não foram verificadas' : ''}. Confira os campos e o PDF original; a CAT será salva automaticamente.${professionalNote}`
-              : 'PDF digitalizado sem texto selecionável. OCR local não está disponível; confira o documento, ajuste os campos e a CAT será salva automaticamente.';
+              : 'PDF digitalizado sem texto selecionável. OCR NVIDIA e fallback local não estão disponíveis; confira o documento, ajuste os campos e a CAT será salva automaticamente.';
         if (ocrRecord || professionalAnalysis) intakeProgressToast?.finish(`Leitura concluída${ocrRecord ? ` · ${ocrRecord.pagesRead}/${ocrRecord.pagesTotal} páginas com imagem; dados-chave extraídos pelo MiniCPM em ${ocrRecord.pagesReviewed}` : ''}${professionalAnalysis ? ` · ${professionalAnalysis.professionals.length} profissional(is) identificado(s) no documento integral` : ''}${ocrError ? ` · ${ocrError}` : ''}${professionalAnalysisError ? ` · ${professionalAnalysisError}` : ''}.`, Boolean(ocrRecord?.failedPages?.length || ocrRecord?.reviewFailedPages?.length || professionalAnalysisError));
         showReview(fields, extractedText, note, professionalAnalysis?.professionals || []);
         reviewForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -4293,7 +4297,9 @@ export async function startApplication(): Promise<void> {
           }
         }
         const professionalAnalysisRecord = professionalAnalysis ? { ...professionalAnalysis, pagesAnalyzed: catPageTextMap(extractedText).length, status: 'complete' } : { status: professionalAnalysisError ? 'pending' : 'not-run', error: professionalAnalysisError };
-        const extractionNote = `${ocrRecord?.model ? `OCR local ${ocrRecord.model}. ${coverageNote}` : ''}${imageNote}${extractedText ? 'Texto de todas as páginas associado ao PDF.' : 'PDF sem texto reconhecido.'}${professionalAnalysis ? ` Análise integral executada uma vez: ${assignedProfessionals.length} profissional(is) associado(s) ao próprio nome.` : professionalAnalysisError ? ` Identificação integral pendente: ${professionalAnalysisError}.` : ''} Confira o documento original antes de usar os dados.`;
+        const savedOcrProviderLabel = [...new Set(ocrRecord?.providers || [ocrRecord?.provider].filter(Boolean))]
+          .map((provider) => provider === 'nvidia-api' ? 'NVIDIA' : 'Tesseract local como fallback').join(' + ');
+        const extractionNote = `${ocrRecord?.model ? `OCR ${savedOcrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}). ${coverageNote}` : ''}${imageNote}${extractedText ? 'Texto de todas as páginas associado ao PDF.' : 'PDF sem texto reconhecido.'}${professionalAnalysis ? ` Análise integral executada uma vez: ${assignedProfessionals.length} profissional(is) associado(s) ao próprio nome.` : professionalAnalysisError ? ` Identificação integral pendente: ${professionalAnalysisError}.` : ''} Confira o documento original antes de usar os dados.`;
         const ocrPageModels = Object.fromEntries((ocrRecord?.ocrPages || []).map((page) => [page, CAT_PAGE_OCR_MODEL]));
         await saveCompanyFileBlob(savedDocument.id, { blob: selectedFile, name: selectedFile.name, type: selectedFile.type || 'application/pdf', extractedText, extractionNote, ocrPages: ocrRecord?.ocrPages || [], imagePages: preparedDocument?.imagePages || [], catOcrPageModels: ocrPageModels, catOcrReviewModels: ocrRecord?.reviewModels || {}, catOcrReviewVersions: ocrRecord?.reviewVersions || {}, professionalAnalysis: professionalAnalysisRecord });
         savedDocument.category = 'cat'; savedDocument.linkedRecordId = catId;

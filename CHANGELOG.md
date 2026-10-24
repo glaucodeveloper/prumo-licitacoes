@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.12 — 24 de outubro de 2026
+
+- Prioriza NVIDIA na leitura OCR visual das páginas de CAT e usa Tesseract local como fallback quando a chamada NVIDIA falha.
+- Texto curto ou vazio repete a tentativa NVIDIA antes de acionar o fallback local.
+- Mantém a identificação do cache OCR estável para não reler CATs já processadas ao abrir.
+
 ## 1.0.11 — 24 de outubro de 2026
 
 - A validação da chave executa uma leitura de imagem pelo OCR local e exige uma extração em JSON pelo MiniCPM antes de exibir sucesso.

@@ -2966,7 +2966,7 @@ async function extractCatWithNvidia(payload, signal = undefined) {
     }
   }
   const readableResults = results.filter((result) => result.ocrText);
-  if (!readableResults.length && !documentText) throw lastError || new Error('OCR não retornou texto legível para os recortes da página.');
+  if (lastError && results.length < pages.length) throw lastError;
   const fields = {
     number: results.find((result) => result.fields.number)?.fields.number,
     title: results.find((result) => result.fields.title)?.fields.title,
@@ -3022,6 +3022,31 @@ async function extractCatPageWithLocalOcr(payload, signal = undefined) {
     provider: responseBody?.provider || 'local-tesseract',
     reviewRequired: true,
   };
+}
+
+async function extractCatPageWithNvidiaFallback(payload, signal = undefined) {
+  let nvidiaError;
+  try {
+    return await extractCatWithNvidia(payload, signal);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    nvidiaError = error;
+  }
+
+  try {
+    const fallback = await extractCatPageWithLocalOcr(payload, signal);
+    return {
+      ...fallback,
+      provider: 'local-tesseract-fallback',
+      primaryProvider: 'nvidia-api',
+      fallbackReason: String(nvidiaError?.message || 'NVIDIA OCR indisponível.').slice(0, 240),
+    };
+  } catch (localError) {
+    if (signal?.aborted) throw localError;
+    const error = new Error(`NVIDIA OCR falhou (${String(nvidiaError?.message || 'erro desconhecido').slice(0, 220)}); OCR local também falhou (${String(localError?.message || 'erro desconhecido').slice(0, 220)}).`);
+    error.statusCode = 502;
+    throw error;
+  }
 }
 
 async function extractDocumentWithNvidia(payload) {
@@ -3258,11 +3283,18 @@ const server = http.createServer(async (request, response) => {
     const [catPage, catReview, tunnelOrigin] = await Promise.all([
       localOcrServiceHealth(), miniCpmHealthy(), portRouterOrigin().catch(() => ''),
     ]);
-    const catPageConfigured = Boolean(catPage?.ready && catPage?.model === LOCAL_OCR_MODEL);
+    const localCatPageConfigured = Boolean(catPage?.ready && catPage?.model === LOCAL_OCR_MODEL);
+    const nvidiaCatPageConfigured = Boolean(settings.apiKey && settings.endpoint);
+    const catPageConfigured = nvidiaCatPageConfigured || localCatPageConfigured;
     const catReviewConfigured = Boolean(catReview);
     return json(response, 200, {
       configured: Boolean(settings.apiKey && settings.endpoint), model: settings.model, endpointHost: settings.endpointHost,
-      catPageConfigured, catPageModel: LOCAL_OCR_MODEL, catPageProvider: 'local-tesseract', catPageEndpoint: tunnelOrigin ? `${tunnelOrigin}/${LOCAL_OCR_PORT}/v1/ocr` : '',
+      catPageConfigured,
+      catPageModel: nvidiaCatPageConfigured ? settings.model : LOCAL_OCR_MODEL,
+      catPageProvider: nvidiaCatPageConfigured ? localCatPageConfigured ? 'nvidia-api-with-local-tesseract-fallback' : 'nvidia-api' : localCatPageConfigured ? 'local-tesseract-only' : 'unavailable',
+      catPagePrimaryProvider: nvidiaCatPageConfigured ? 'nvidia-api' : 'local-tesseract',
+      catPageFallbackProvider: nvidiaCatPageConfigured && localCatPageConfigured ? 'local-tesseract' : '',
+      catPageEndpoint: tunnelOrigin ? `${tunnelOrigin}/${LOCAL_OCR_PORT}/v1/ocr` : '',
       catReviewConfigured, catReviewModel: MINICPM_MODEL, catReviewProvider: 'minicpm5-2b-ngrok', catReviewEndpoint: tunnelOrigin ? `${tunnelOrigin}/${MINICPM_PORT}/v1/chat/completions` : '',
       envLoaded: settings.envLoaded,
     });
@@ -3299,13 +3331,14 @@ const server = http.createServer(async (request, response) => {
     if (rejectCrossOriginPost(request, response)) return;
     const clientRequest = abortSignalForClientRequest(request, response);
     try {
+      await loadBelavistaNvidiaEnvironment().catch(() => {});
       const payload = await readBody(request, 12 * 1024 * 1024);
-      const result = await extractCatPageWithLocalOcr(payload, clientRequest.signal);
+      const result = await extractCatPageWithNvidiaFallback(payload, clientRequest.signal);
       return json(response, 200, result);
     } catch (error) {
       if (clientRequest.signal.aborted || response.destroyed) return;
       const status = Number(error?.statusCode);
-      return json(response, status >= 400 && status < 600 ? status : 502, { error: error.message || 'Falha ao ler a página da CAT com OCR local.' });
+      return json(response, status >= 400 && status < 600 ? status : 502, { error: error.message || 'Falha na leitura NVIDIA e no fallback OCR local da página da CAT.' });
     } finally {
       clientRequest.cleanup();
     }
