@@ -1,0 +1,44 @@
+name: Build and publish Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Read release version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build Windows Electron binaries
+        shell: pwsh
+        run: .\scripts\build-electron-windows.ps1
+
+      - name: Publish binary assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Prumo Licitações ${{ steps.version.outputs.version }}
+          body: Binários Windows x64 do Prumo Licitações.
+          files: |
+            output/electron-windows/Prumo-Licitacoes-Setup-${{ steps.version.outputs.version }}-x64.exe
+            output/electron-windows/Prumo-Licitacoes-Portable-${{ steps.version.outputs.version }}-x64.exe
+          fail_on_unmatched_files: true

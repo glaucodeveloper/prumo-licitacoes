@@ -1,0 +1,15 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';">
+<title>Prumo - Chave de acesso</title><style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;color:#e9e9ec;background:#141820;padding:30px}
+h1{font-size:24px;margin:0 0 8px}p{color:#b2b9c6;line-height:1.55}label{display:block;margin:22px 0 7px;font-weight:600}
+input{width:100%;border:1px solid #50586a;border-radius:10px;background:#202632;color:#fff;padding:12px 13px;font:inherit}
+input:focus{outline:2px solid #7198ea}small{display:block;color:#9aa6b9;line-height:1.5;margin-top:9px;overflow-wrap:anywhere}
+button{margin-top:20px;border:0;border-radius:10px;padding:13px 17px;background:#edf0f7;color:#101218;font-weight:700;cursor:pointer;width:100%}
+#error{color:#ff9292;min-height:22px;margin:13px 0 0}.panel{border:1px solid #384354;border-radius:12px;background:#202632;padding:14px;margin-top:22px}
+</style></head><body><h1>Chave de acesso</h1>
+<p>Informe somente a chave de acesso ngrok. O teste verifica a chave, a rota protegida e o OCR local usado na leitura das páginas de CAT.</p>
+<form id="form"><label for="key">Chave do roteador</label><input id="key" type="password" required autocomplete="off" placeholder="Cole somente ROUTER_KEY" spellcheck="false">
+<div class="panel"><strong>Conexão configurada</strong><small id="target"></small><small>A chave salva fica no perfil local do Windows. Deixe o campo vazio para testar e manter a chave existente. Ela não é incluída no executável.</small></div>
+<button type="button" id="validate">Testar chave e OCR</button><button type="submit" id="save">Salvar e abrir Prumo</button><p id="error" role="status" aria-live="polite"></p></form>
+<script src="settings.js"></script></body></html>
