@@ -17,8 +17,15 @@ function Invoke-Checked {
 Push-Location $ProjectRoot
 try {
   Write-Host '[1/6] Instalando dependências e compilando frontend...'
-  Invoke-Checked 'npm.cmd' @('ci', '--no-audit', '--no-fund')
-  Invoke-Checked 'npm.cmd' @('run', 'build:frontend')
+  Invoke-Checked 'npm.cmd' @('ci', '--ignore-scripts', '--no-audit', '--no-fund')
+  Push-Location (Join-Path $ProjectRoot 'frontend')
+  try {
+    Invoke-Checked 'npm.cmd' @('ci', '--no-audit', '--no-fund')
+    Invoke-Checked 'npm.cmd' @('run', 'build')
+  }
+  finally {
+    Pop-Location
+  }
 
   Write-Host '[2/6] Montando pacote sem dados pessoais nem chaves...'
   if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
@@ -61,7 +68,13 @@ try {
   Write-Host '[3/6] Preparação e sintaxe validadas.'
   Write-Host '[4/6] Instalando Electron, electron-builder e dependências da aplicação...'
   $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
-  Invoke-Checked 'npm.cmd' @('install', '--prefix', $Stage, '--no-audit', '--no-fund')
+  Push-Location $Stage
+  try {
+    Invoke-Checked 'npm.cmd' @('install', '--no-audit', '--no-fund')
+  }
+  finally {
+    Pop-Location
+  }
 
   Write-Host '[5/6] Baixando Chromium Windows do Playwright...'
   $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $Stage 'browsers'

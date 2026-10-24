@@ -41,6 +41,7 @@ pkg.devDependencies = {
   'electron-builder': '^26.0.12',
 };
 pkg.scripts = { ...(pkg.scripts || {}), 'build:electron:win': 'electron-builder --win --x64 --publish never' };
+delete pkg.scripts.postinstall;
 pkg.build = {
   appId: 'br.com.prumo.licitacoes',
   productName: 'Prumo Licitações',
