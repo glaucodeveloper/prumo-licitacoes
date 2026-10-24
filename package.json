@@ -1,12 +1,13 @@
 {
   "name": "prumo-licitacoes-local",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "type": "module",
   "scripts": {
     "postinstall": "npm --prefix frontend install",
     "build:frontend": "npm --prefix frontend run build",
-    "start": "npm run build:frontend && node server.mjs"
+    "start": "npm run build:frontend && node server.mjs",
+    "test:electron-config": "node --test electron/connection-validator.test.cjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",

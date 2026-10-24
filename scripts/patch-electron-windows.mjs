@@ -48,7 +48,7 @@ pkg.build = {
   asar: false,
   npmRebuild: false,
   directories: { output: path.resolve(outputDir) },
-  files: ['**/*', '!**/.git/**', '!**/.env*', '!**/data/**', '!**/*.pem', '!**/*.key', '!**/*.zip', '!**/*.AppImage', '!**/output/**'],
+  files: ['**/*', '!**/.git/**', '!**/.env*', '!**/data/**', '!**/*.pem', '!**/*.key', '!**/*.zip', '!**/*.AppImage', '!**/output/**', '!**/*.test.cjs'],
   win: { icon: 'electron/prumo.ico', target: ['portable', 'nsis'], signAndEditExecutable: true },
   portable: { artifactName: 'Prumo-Licitacoes-Portable-${version}-${arch}.${ext}' },
   nsis: {

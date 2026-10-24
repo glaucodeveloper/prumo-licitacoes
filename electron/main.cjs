@@ -6,6 +6,7 @@ const net = require('node:net');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
+const { validateRouterConfig } = require('./connection-validator.cjs');
 
 const APP_ROOT = app.getAppPath();
 const DEFAULT_PORT = 8765;
@@ -56,33 +57,6 @@ function normalizeConfig(input, previous = {}) {
     assistantPort: DEFAULT_ASSISTANT_PORT,
     model: 'openjev-27b-q4_k_m',
   };
-}
-async function validateRouterConfig(candidate) {
-  const url = new URL('/19202/health', ROUTER_ORIGIN);
-  let response;
-  try {
-    response = await fetch(url, {
-      headers: { 'X-Port-Router-Key': candidate.key, 'ngrok-skip-browser-warning': '1', accept: 'application/json' },
-      signal: AbortSignal.timeout(15000),
-      cache: 'no-store',
-      redirect: 'error',
-    });
-  } catch (error) {
-    return { ok: false, invalidKey: false, error: `Não foi possível validar a conexão com o roteador e o OCR local: ${error.message}` };
-  }
-  if (response.status === 401 || response.status === 403) {
-    return { ok: false, invalidKey: true, error: `O roteador recusou a chave informada (HTTP ${response.status}).` };
-  }
-  if (!response.ok) {
-    return { ok: false, invalidKey: false, error: `O roteador respondeu HTTP ${response.status} ao verificar o serviço OCR na porta 19202.` };
-  }
-  let health;
-  try { health = await response.json(); }
-  catch { return { ok: false, invalidKey: false, error: 'O serviço OCR respondeu em formato inválido.' }; }
-  if (health?.ready !== true || health?.model !== 'tesseract-lstm-por-eng-v1') {
-    return { ok: false, invalidKey: false, error: 'A chave foi aceita, mas o serviço OCR local não está pronto com o modelo esperado.' };
-  }
-  return { ok: true, invalidKey: false, message: 'Chave aceita. Roteador ngrok e OCR local responderam.' };
 }
 function publicConfig() {
   const current = config || { remoteUrl: ROUTER_ORIGIN, key: '', port: DEFAULT_PORT, assistantPort: DEFAULT_ASSISTANT_PORT, model: 'openjev-27b-q4_k_m' };
@@ -258,21 +232,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('prumo:validate-config', async (_event, input) => {
     try {
       const candidate = normalizeConfig(input, config || {});
-      return await validateRouterConfig(candidate);
+      return await validateRouterConfig(candidate, { routerOrigin: ROUTER_ORIGIN });
     } catch (error) { return { ok: false, error: error.message }; }
   });
   ipcMain.handle('prumo:save-config', async (_event, input) => {
     try {
       const candidate = normalizeConfig(input, config || {});
-      const validation = await validateRouterConfig(candidate);
+      const validation = await validateRouterConfig(candidate, { routerOrigin: ROUTER_ORIGIN });
       if (!validation.ok) return validation;
       const next = { ...candidate, validatedForVersion: app.getVersion() };
       persistConfig(next);
       config = next;
       startupNotice = validation.message;
       if (!started) await startBackend();
-      if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
-      return { ok: true, message: validation.message };
+      if (!validation.warning && settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
+      return { ok: true, warning: Boolean(validation.warning), message: validation.message };
     } catch (error) { log('Configuração: ' + error.message); return { ok: false, error: error.message }; }
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -285,7 +259,7 @@ app.whenReady().then(async () => {
   if (!config) openSettings();
   else {
     try {
-      const validation = await validateRouterConfig(config);
+      const validation = await validateRouterConfig(config, { routerOrigin: ROUTER_ORIGIN });
       if (validation.invalidKey) {
         startupNotice = validation.error;
         config = null;
