@@ -1785,6 +1785,7 @@ export async function startApplication(): Promise<void> {
         const hasOcr = ocrPages.includes(number) || /Texto reconhecido na imagem:/i.test(originalText);
         const pageOcrText = catPageOcrText(originalText);
         const weakOcr = catOcrTextNeedsRetry(pageOcrText) || catOcrPageHasIncompleteTable(pageOcrText) || catOcrPageHasMetadataOnly(pageOcrText);
+        const confidenceKnown = Object.prototype.hasOwnProperty.call(ocrConfidence, number) && Number.isFinite(Number(ocrConfidence[number]));
         return {
           number,
           text: weakOcr ? removeWeakCatOcrText(originalText) : originalText,
@@ -1798,7 +1799,9 @@ export async function startApplication(): Promise<void> {
           ocrReviewError: String(ocrPageErrors[number] || ''),
           ocrReviewModel: String(ocrReviewModels[number] || ''),
           ocrRetryCount: Number(retryAttempts[number]) || 0,
-          ocrConfidence: Number(ocrConfidence[number]) || 0,
+          // Older CAT records can contain completed OCR/review text without a confidence map.
+          // Treat missing confidence as unknown; only an explicitly low score should trigger OCR again.
+          ocrConfidence: confidenceKnown ? Number(ocrConfidence[number]) : null,
         };
       });
       const cleanedExtractedText = pageRows.map((page) => `--- Página ${page.number} ---\n${page.text || ''}`).join('\n\n');
@@ -1895,13 +1898,13 @@ export async function startApplication(): Promise<void> {
     const marker = /Texto reconhecido na imagem:\s*/i.exec(text);
     if (!marker) return '';
     const start = marker.index + marker[0].length;
-    const reviewIndex = text.slice(start).search(/\n\s*(?:Texto revisado pelo Metis|Dados-chave extraídos pelo Metis(?: local)?|Dados-chave extraídos pela NVIDIA):\s*/i);
+    const reviewIndex = text.slice(start).search(/\n\s*(?:Texto revisado pelo Metis|Dados-chave extraídos pelo (?:Metis(?: local)?|MiniCPM)|Dados-chave extraídos pela NVIDIA):\s*/i);
     return text.slice(start, reviewIndex >= 0 ? start + reviewIndex : undefined).trim();
   }
 
   function catPageOcrReviewedText(value) {
     const text = String(value || '');
-    const marker = /(?:Texto revisado pelo Metis|Dados-chave extraídos pelo Metis(?: local)?|Dados-chave extraídos pela NVIDIA):\s*/ig;
+    const marker = /(?:Texto revisado pelo Metis|Dados-chave extraídos pelo (?:Metis(?: local)?|MiniCPM)|Dados-chave extraídos pela NVIDIA):\s*/ig;
     let match;
     let lastIndex = -1;
     while ((match = marker.exec(text))) lastIndex = marker.lastIndex;
@@ -1921,7 +1924,7 @@ export async function startApplication(): Promise<void> {
 
   function catPageAssistantEvidence(value) {
     const text = String(value || '');
-    const markerIndex = text.search(/(?:Texto reconhecido na imagem|Dados-chave extraídos pelo Metis(?: local)?|Dados-chave extraídos pela NVIDIA|Texto revisado pelo Metis):\s*/i);
+    const markerIndex = text.search(/(?:Texto reconhecido na imagem|Dados-chave extraídos pelo (?:Metis(?: local)?|MiniCPM)|Dados-chave extraídos pela NVIDIA|Texto revisado pelo Metis):\s*/i);
     if (markerIndex < 0) return { pdfText: text.trim(), ocrText: '', ocrReviewed: false };
     const pdfText = text.slice(0, markerIndex).trim();
     const reviewedText = catPageOcrReviewedText(text);
@@ -2297,6 +2300,12 @@ export async function startApplication(): Promise<void> {
     if (aside) aside.innerHTML = catPageAnnotationMarkup(page);
   }
 
+  function catPageNeedsImageProcessing(page) {
+    return !(page.ocr && page.ocrReviewed && !page.ocrNeedsRetry
+      && (page.ocrConfidence === null || page.ocrConfidence >= 0.65)
+      && !page.ocrNeedsModelRefresh && !page.ocrNeedsReviewRefresh);
+  }
+
   async function enrichCatImagePagesWithOcr(data, token) {
     if (!data || data.ocrStarted || !catReaderPdf || !catReaderDocumentMeta) return;
     data.ocrStarted = true;
@@ -2314,7 +2323,7 @@ export async function startApplication(): Promise<void> {
           pageRow.imageDetected = await catPdfPageHasImage(page, pdfjs);
           if (pageRow.imageDetected) updateCatPageAnnotation(pageRow);
           if (!pageRow.imageDetected) continue;
-          if (pageRow.ocr && pageRow.ocrReviewed && !pageRow.ocrNeedsRetry && pageRow.ocrConfidence >= 0.65 && !pageRow.ocrNeedsModelRefresh && !pageRow.ocrNeedsReviewRefresh) continue;
+          if (!catPageNeedsImageProcessing(pageRow)) continue;
           candidates.push(pageRow);
         }
         const imageCount = data.pages.filter((page) => page.imageDetected).length;
