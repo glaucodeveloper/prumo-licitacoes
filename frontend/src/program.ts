@@ -211,6 +211,7 @@ export async function startApplication(): Promise<void> {
   let catReaderLoadToken = 0;
   let catReaderPdf = null;
   let catReaderPdfTask = null;
+  const catKeyFactTasks = new Set<string>();
   let catPdfPageObserver: IntersectionObserver | null = null;
   let catPdfRenderObserver: IntersectionObserver | null = null;
   let catPdfRenderTasks = new Map<number, any>();
@@ -1655,7 +1656,7 @@ export async function startApplication(): Promise<void> {
         : page.ocrNeedsReviewRefresh
             ? `Extração antiga · dados-chave serão refeitos${page.ocrReviewError ? ` · ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
           : page.ocrStatus === 'complete'
-            ? `OCR atualizado · extração NVIDIA pendente${page.ocrReviewError ? `: ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
+            ? `OCR atualizado · MiniCPM pendente${page.ocrReviewError ? `: ${String(page.ocrReviewError).slice(0, 100)}` : ''}`
           : page.ocr ? 'Texto OCR disponível' : 'Texto pesquisável do PDF';
     const excerpt = pageText
       ? `<article class="cat-page-note cat-page-excerpt"><header><span class="cat-note-pin">${page.number}</span><span><strong>Dados-chave da página</strong><small>${sourceLabel}</small></span></header><div class="cat-page-excerpt-body">${catPageExcerptMarkup(page)}</div></article>`
@@ -1778,7 +1779,7 @@ export async function startApplication(): Promise<void> {
       const ocrPageModels = stored.catOcrPageModels || {};
       const ocrReviewModels = stored.catOcrReviewModels || {};
       const ocrReviewVersions = stored.catOcrReviewVersions || {};
-      const ocrPageErrors = stored.catOcrPageErrors || {};
+      const ocrPageErrors = { ...(stored.catOcrPageErrors || {}), ...(stored.catOcrReviewErrors || {}) };
       const pageRows = Array.from({ length: pageCount }, (_, index) => {
         const number = index + 1;
         const originalText = pageTextByNumber.get(number) || '';
@@ -1811,9 +1812,10 @@ export async function startApplication(): Promise<void> {
       }
       const readingNote = String(cat.activities || '').match(/Nota de leitura para o assistente:\s*([\s\S]*)$/i)?.[1] || '';
       const extractionNote = [...new Set([stored.extractionNote, file.extractionNote, readingNote].filter(Boolean))].join(' · ');
-      catReaderSummaryData = { key: `${co.id}:${cat.id}`, pages: pageRows, unmatched: annotations.unmatched, extracted: catExtractedTextHasContent(stored.extractedText), extractionNote, ocrPages, ocrStarted: false, ocrAbortController: new AbortController(), ocrStatusLabel: 'documento aberto; associando conteúdo às páginas', progressToast };
+      catReaderSummaryData = { key: `${co.id}:${cat.id}`, pages: pageRows, unmatched: annotations.unmatched, extracted: catExtractedTextHasContent(stored.extractedText), extractionNote, ocrPages, ocrStarted: true, ocrAbortController: new AbortController(), ocrStatusLabel: 'OCR salvo reutilizado; abrir a CAT não inicia nova leitura', progressToast };
       progressToast.update(`Documento aberto · ${pageCount} páginas. Associando conteúdo…`, pageRows.filter((page) => page.text.trim()).length, pageCount);
       render();
+      progressToast.finish(`CAT aberta · OCR e dados salvos reutilizados. Nenhuma página foi relida.`);
     } catch (error) {
       if (token !== catReaderLoadToken) return;
       progressToast.finish(`Falha ao abrir o documento: ${error.message || 'erro de leitura.'}`, true);
@@ -2037,7 +2039,7 @@ export async function startApplication(): Promise<void> {
     const segments = splitCatOcrReviewSegments(ocrText);
     if (!segments.length) throw new Error('Não há segmentos da página para extrair dados-chave.');
     const extractedFacts = [];
-    let model = 'NVIDIA';
+    let model = 'minicpm5-2b';
     for (const [index, segment] of segments.entries()) {
       onProgress?.({ segment: index + 1, total: segments.length, completed: index, phase: 'extraindo' });
       const result = await retryCatRead(async () => {
@@ -2054,12 +2056,12 @@ export async function startApplication(): Promise<void> {
           }));
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            const error = new Error(body.error || `Extração NVIDIA HTTP ${response.status}`);
+            const error = new Error(body.error || `Extração MiniCPM HTTP ${response.status}`);
             (error as any).statusCode = response.status;
             throw error;
           }
           if (!Array.isArray(body.keyFacts)) {
-            const error = new Error(`NVIDIA não devolveu dados estruturados no segmento ${index + 1}/${segments.length}.`);
+            const error = new Error(`MiniCPM não devolveu dados estruturados no segmento ${index + 1}/${segments.length}.`);
             throw error;
           }
           return body;
@@ -2086,6 +2088,104 @@ export async function startApplication(): Promise<void> {
       }).join('\n').trim()
       : 'Nenhum dado-chave legível foi identificado nesta página.';
     return { text, facts: uniqueFacts, model, segmentsReviewed: segments.length, reviewVersion: CAT_OCR_REVIEW_VERSION };
+  }
+
+  async function organizeSavedCatKeyFacts(fileId, companyId, cat, ocrRecord) {
+    const sources = Array.isArray(ocrRecord?.reviewSources) ? ocrRecord.reviewSources.filter((page) => Number(page.page) > 0 && String(page.text || '').trim()) : [];
+    const taskKey = `${fileId}:${cat?.id || ''}`;
+    if (!fileId || !sources.length || catKeyFactTasks.has(taskKey)) return;
+    catKeyFactTasks.add(taskKey);
+    const progress = createProgressToast(`MiniCPM organizando dados da CAT ${cat.number}…`);
+    try {
+      const stored = await getCompanyFileBlob(fileId);
+      if (!stored?.blob) throw new Error('O PDF salvo da CAT não está disponível para estruturar os dados.');
+      const pageTexts = new Map(catPageTextMap(stored.extractedText || '').map((page) => [Number(page.number), page.text]));
+      const contextPages = new Map([...pageTexts.entries()].map(([number, text]) => [number, { number, text }]));
+      const reviewModels = { ...(stored.catOcrReviewModels || {}) };
+      const reviewVersions = { ...(stored.catOcrReviewVersions || {}) };
+      const reviewErrors = { ...(stored.catOcrReviewErrors || {}) };
+      const completedPageNumbers = [];
+      let pendingPages = [...new Set((stored.catOcrReviewPendingPages || sources.map((page) => Number(page.page))).map(Number).filter((page) => page > 0))];
+      const fileRecord = (state.companyDocuments || []).find((file) => file.id === fileId);
+      let completed = 0;
+      for (const source of sources) {
+        const pageNumber = Number(source.page);
+        if (reviewVersions[pageNumber] === CAT_OCR_REVIEW_VERSION && reviewModels[pageNumber]) {
+          pendingPages = pendingPages.filter((page) => page !== pageNumber);
+          continue;
+        }
+        progress.update(`MiniCPM organizando página ${pageNumber} · CAT já salva`, completed, sources.length);
+        try {
+          const review = await reviewCatOcrPage(fileRecord?.name || cat.documentName || 'CAT', pageNumber, source.text, {
+            documentContext: catOcrReviewContext(cat, contextPages, pageNumber),
+            onProgress: ({ segment, total, completed: segmentCompleted, phase, elapsedSeconds, retryAttempt, error }) => {
+              const label = phase === 'aguardando'
+                ? `Aguardando MiniCPM · página ${pageNumber} · segmento ${segment}/${total} · ${elapsedSeconds}s`
+                : phase === 'retry'
+                  ? `MiniCPM sem resposta (${error || 'erro temporário'}); tentativa ${retryAttempt} · página ${pageNumber}`
+                  : `${phase === 'extraído' ? 'Dados-chave organizados' : 'MiniCPM lendo'} · página ${pageNumber} · segmento ${segment}/${total}`;
+              progress.update(label, completed + segmentCompleted / Math.max(1, total), sources.length);
+            },
+          });
+          const pageText = replaceCatPageOcrReview(pageTexts.get(pageNumber) || '', source.text, review.text);
+          pageTexts.set(pageNumber, pageText);
+          contextPages.set(pageNumber, { number: pageNumber, text: pageText });
+          reviewModels[pageNumber] = review.model;
+          reviewVersions[pageNumber] = CAT_OCR_REVIEW_VERSION;
+          delete reviewErrors[pageNumber];
+          pendingPages = pendingPages.filter((page) => page !== pageNumber);
+          completedPageNumbers.push(pageNumber);
+          const lastPage = Math.max(...pageTexts.keys(), ...sources.map((page) => Number(page.page)));
+          stored.extractedText = Array.from({ length: lastPage }, (_, index) => `--- Página ${index + 1} ---\n${pageTexts.get(index + 1) || ''}`).join('\n\n');
+          stored.catOcrReviewModels = reviewModels;
+          stored.catOcrReviewVersions = reviewVersions;
+          stored.catOcrReviewErrors = reviewErrors;
+          stored.catOcrReviewPendingPages = pendingPages;
+          const priorNote = String(stored.extractionNote || '').replace(/MiniCPM organizará os dados-chave após o cadastro[^.]*\./gi, '').trim();
+          stored.extractionNote = [...new Set([priorNote, `MiniCPM organizou os dados-chave após o cadastro nas páginas ${completedPageNumbers.join(', ')}.`].filter(Boolean))].join(' ');
+          await saveCompanyFileBlob(fileId, stored);
+          if (fileRecord) {
+            fileRecord.indexed = catExtractedTextHasContent(stored.extractedText);
+            fileRecord.extractionNote = stored.extractionNote;
+          }
+          const readerData = catReaderSummaryData?.key === `${companyId}:${cat.id}` && catReaderDocumentMeta?.file?.id === fileId ? catReaderSummaryData : null;
+          if (readerData) {
+            const pageRow = readerData.pages.find((page) => Number(page.number) === pageNumber);
+            if (pageRow) {
+              pageRow.text = pageText;
+              pageRow.ocr = true;
+              pageRow.ocrReviewed = true;
+              pageRow.ocrReviewModel = review.model;
+              pageRow.ocrReviewVersion = CAT_OCR_REVIEW_VERSION;
+              pageRow.ocrReviewError = '';
+              pageRow.ocrStatus = 'complete';
+              updateCatPageAnnotation(pageRow);
+            }
+            readerData.extracted = catExtractedTextHasContent(stored.extractedText);
+            readerData.extractionNote = stored.extractionNote;
+            updateCatReaderOcrStatus(readerData);
+          }
+          saveState();
+        } catch (error) {
+          reviewErrors[pageNumber] = error.message || 'MiniCPM não concluiu a estruturação desta página.';
+          stored.catOcrReviewModels = reviewModels;
+          stored.catOcrReviewVersions = reviewVersions;
+          stored.catOcrReviewErrors = reviewErrors;
+          stored.catOcrReviewPendingPages = pendingPages;
+          stored.extractionNote = [...new Set([stored.extractionNote, `MiniCPM pendente na página ${pageNumber}; o OCR original foi preservado.`].filter(Boolean))].join(' ');
+          await saveCompanyFileBlob(fileId, stored).catch(() => {});
+          if (fileRecord) fileRecord.extractionNote = stored.extractionNote;
+          saveState();
+          throw error;
+        }
+        completed += 1;
+      }
+      progress.finish(`MiniCPM organizou os dados da CAT ${cat.number} após o cadastro.`);
+    } catch (error) {
+      progress.finish(`MiniCPM não concluiu a estruturação da CAT ${cat.number}: ${error.message || 'erro no serviço.'}`, true);
+    } finally {
+      catKeyFactTasks.delete(taskKey);
+    }
   }
 
   function catTextFingerprint(value: string) {
@@ -2386,8 +2486,8 @@ export async function startApplication(): Promise<void> {
                         : phase === 'retry'
                           ? `NVIDIA sem resposta (${error || 'erro transitório'}); tentativa ${retryAttempt} · página ${pageRow.number}`
                         : phase === 'aguardando'
-                          ? `Aguardando NVIDIA · página ${pageRow.number} · segmento ${segment}/${total} · ${elapsedSeconds}s`
-                          : `NVIDIA extraindo dados da página ${pageRow.number} · segmento ${segment}/${total}`;
+                          ? `Aguardando MiniCPM · página ${pageRow.number} · segmento ${segment}/${total} · ${elapsedSeconds}s`
+                          : `MiniCPM extraindo dados da página ${pageRow.number} · segmento ${segment}/${total}`;
                       data.ocrStatusLabel = label;
                       updateCatReaderOcrStatus(data);
                       data.progressToast?.update(label, completed, total, 'segmentos');
@@ -2404,7 +2504,7 @@ export async function startApplication(): Promise<void> {
                 } catch (reviewError) {
                   pageRow.ocrReviewed = false;
                   pageRow.text = replaceCatPageOcrText(pageRow.text, storedRawText);
-                  pageRow.ocrReviewError = reviewError.message || 'Extração NVIDIA não concluída.';
+                  pageRow.ocrReviewError = reviewError.message || 'Extração MiniCPM não concluída.';
                   reviewFailures.push(pageRow.number);
                 }
                 pageRow.ocrStatus = 'complete'; pageRow.ocrStage = '';
@@ -2454,8 +2554,8 @@ export async function startApplication(): Promise<void> {
                       : phase === 'retry'
                     ? `NVIDIA sem resposta (${error || 'erro transitório'}); tentativa ${retryAttempt} · página ${pageRow.number}`
                       : phase === 'aguardando'
-                      ? `Aguardando NVIDIA · página ${pageRow.number} · segmento ${segment}/${total} · ${elapsedSeconds}s`
-                      : `NVIDIA extraindo dados da página ${pageRow.number} · segmento ${segment}/${total}`;
+                      ? `Aguardando MiniCPM · página ${pageRow.number} · segmento ${segment}/${total} · ${elapsedSeconds}s`
+                      : `MiniCPM extraindo dados da página ${pageRow.number} · segmento ${segment}/${total}`;
                     data.ocrStatusLabel = label;
                     updateCatReaderOcrStatus(data);
                     data.progressToast?.update(label, completed, total, 'segmentos');
@@ -2471,7 +2571,7 @@ export async function startApplication(): Promise<void> {
               } catch (reviewError) {
                 pageRow.text = recognizedPageText;
                 pageRow.ocrReviewed = false;
-                pageRow.ocrReviewError = reviewError.message || 'Extração NVIDIA não concluída.';
+                pageRow.ocrReviewError = reviewError.message || 'Extração MiniCPM não concluída.';
                 reviewFailures.push(pageRow.number);
               }
               pageRow.ocrStatus = 'complete'; pageRow.ocrStage = '';
@@ -2516,7 +2616,7 @@ export async function startApplication(): Promise<void> {
             data.extractionNote = stored.extractionNote;
           }
           if (batch.some((page) => page.ocrReviewError)) {
-            stored.extractionNote = [...new Set([stored.extractionNote, `Extração de dados-chave pela NVIDIA pendente nas páginas ${batch.filter((page) => page.ocrReviewError).map((page) => page.number).join(', ')}; a fonte original foi preservada.`].filter(Boolean))].join(' ');
+            stored.extractionNote = [...new Set([stored.extractionNote, `Extração MiniCPM de dados-chave pendente nas páginas ${batch.filter((page) => page.ocrReviewError).map((page) => page.number).join(', ')}; a fonte original foi preservada.`].filter(Boolean))].join(' ');
             data.extractionNote = stored.extractionNote;
           }
           await saveCompanyFileBlob(catReaderDocumentMeta.file.id, stored);
@@ -2541,8 +2641,8 @@ export async function startApplication(): Promise<void> {
         const currentReviewedPages = data.pages.filter((page) => page.imageDetected && stored.catOcrReviewModels?.[page.number] && stored.catOcrReviewVersions?.[page.number] === CAT_OCR_REVIEW_VERSION).length;
         const readablePages = data.pages.filter((page) => page.imageDetected && page.ocr).length;
         data.ocrStatusLabel = failures.length
-          ? `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave NVIDIA ${currentReviewedPages}/${imageCount}; falha nas páginas ${failures.join(', ')}`
-          : `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave NVIDIA em ${currentReviewedPages}/${imageCount} página(s); ${readablePages} com texto legível`;
+          ? `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave MiniCPM ${currentReviewedPages}/${imageCount}; falha nas páginas ${failures.join(', ')}`
+          : `OCR NVIDIA/local ${currentModelPages}/${imageCount} · dados-chave MiniCPM em ${currentReviewedPages}/${imageCount} página(s); ${readablePages} com texto legível`;
         updateCatReaderOcrStatus(data);
         data.progressToast?.finish(failures.length
           ? `Leitura parcial · ${currentModelPages}/${imageCount} páginas adicionadas; falha nas páginas ${failures.join(', ')}.`
@@ -2670,7 +2770,7 @@ export async function startApplication(): Promise<void> {
                   const extraction = await reviewCatOcrPage(file.name, pageNumber, sourceText, {
                     documentContext: catOcrReviewContext(cat, pageRows, pageNumber),
                     onProgress: ({ segment, total, completed, phase, elapsedSeconds, retryAttempt, error }) => updateProgress(
-                      `${phase === 'extraído' ? 'Dados-chave extraídos' : phase === 'retry' ? `NVIDIA falhou (${error || 'erro transitório'}); tentativa ${retryAttempt}` : phase === 'aguardando' ? `NVIDIA processando há ${elapsedSeconds}s` : 'Extração NVIDIA'} · segmento ${segment}/${total} · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages}`,
+                    `${phase === 'extraído' ? 'Dados-chave extraídos' : phase === 'retry' ? `MiniCPM falhou (${error || 'erro transitório'}); tentativa ${retryAttempt}` : phase === 'aguardando' ? `MiniCPM processando há ${elapsedSeconds}s` : 'Extração MiniCPM'} · segmento ${segment}/${total} · ${catReprocessState.current} · página ${pageNumber}/${pdf.numPages}`,
                       completed, total, 'segmentos',
                     ),
                   });
@@ -2749,7 +2849,7 @@ export async function startApplication(): Promise<void> {
           const extractedCount = imagePages.concat([...pageRows.keys()].filter((number) => !imagePages.includes(number) && Boolean(pageRows.get(number)?.text?.trim()))).filter((number) => Boolean(reviewModels[number]) && reviewVersions[number] === CAT_OCR_REVIEW_VERSION).length;
           const failureDetails = failedForDocument.slice(0, 3).map((page) => `p. ${page}: ${pageErrors[page] || 'extração pendente'}`).join(' · ');
           const responsibleNote = cat.professionalAnalysis?.status === 'complete' ? `; documento integral analisado uma vez e ${cat.professionals?.length || 0} responsável(is) atribuído(s) pelo nome` : `; análise de responsáveis pendente (${cat.professionalAnalysis?.error || 'sem resultado'})`;
-          file.extractionNote = `Reprocessamento concluído: dados-chave pela NVIDIA em ${extractedCount} página(s) de ${pagesWithSource} com conteúdo${imagePages.length ? `; OCR visual em ${stored.ocrPages.filter((page) => imagePages.includes(page)).length}/${imagePages.length} página(s) com imagem` : ''}${responsibleNote}${failedForDocument.length ? `; pendência nas páginas ${failedForDocument.join(', ')} (${failureDetails})` : ''}. Texto-fonte preservado para consulta do assistente.`;
+          file.extractionNote = `Reprocessamento concluído: dados-chave pelo MiniCPM em ${extractedCount} página(s) de ${pagesWithSource} com conteúdo${imagePages.length ? `; OCR visual em ${stored.ocrPages.filter((page) => imagePages.includes(page)).length}/${imagePages.length} página(s) com imagem` : ''}${responsibleNote}${failedForDocument.length ? `; pendência nas páginas ${failedForDocument.join(', ')} (${failureDetails})` : ''}. Texto-fonte preservado para consulta do assistente.`;
           stored.extractionNote = file.extractionNote;
           await saveCompanyFileBlob(file.id, stored);
           saveState();
@@ -2864,7 +2964,6 @@ export async function startApplication(): Promise<void> {
     if (token === catReaderLoadToken) {
       observeCatPdfPage(targetWidth, token);
       updateCatReaderOcrStatus(data);
-      void enrichCatImagePagesWithOcr(data, token);
     }
   }
 
@@ -3024,6 +3123,50 @@ export async function startApplication(): Promise<void> {
     queryAll(rowSelector).forEach((row) => { row.hidden = !matchString(row).toLowerCase().includes(text); });
   }
 
+  function sanitizeRichTextHtml(value) {
+    const template = document.createElement('template');
+    template.innerHTML = String(value || '');
+    const allowed = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BLOCKQUOTE']);
+    const discard = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'SVG', 'MATH']);
+    const cleanNode = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent || '');
+      if (node.nodeType !== Node.ELEMENT_NODE) return document.createDocumentFragment();
+      const source = node;
+      if (discard.has(source.tagName)) return document.createDocumentFragment();
+      const children = Array.from(source.childNodes).map(cleanNode);
+      if (!allowed.has(source.tagName)) {
+        const fragment = document.createDocumentFragment();
+        children.forEach((child) => fragment.append(child));
+        return fragment;
+      }
+      const clean = document.createElement(source.tagName.toLowerCase());
+      children.forEach((child) => clean.append(child));
+      return clean;
+    };
+    const output = document.createElement('div');
+    Array.from(template.content.childNodes).map(cleanNode).forEach((node) => output.append(node));
+    return output.innerHTML.trim();
+  }
+
+  function plainTextToRichTextHtml(value) {
+    return String(value || '').replace(/\r/g, '').split('\n').map((line) => `<p>${line.trim() ? esc(line) : '<br>'}</p>`).join('');
+  }
+
+  function richTextHtmlToPlainText(value) {
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeRichTextHtml(value);
+    const read = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return '';
+      const tag = node.nodeType === Node.ELEMENT_NODE ? node.tagName : '';
+      if (tag === 'BR') return '\n';
+      if (tag === 'UL' || tag === 'OL') return Array.from(node.childNodes).map((item) => `• ${read(item).trim()}`).filter((line) => line !== '•').join('\n') + '\n';
+      const content = Array.from(node.childNodes).map(read).join('');
+      return ['P', 'DIV', 'LI', 'BLOCKQUOTE'].includes(tag) ? `${content.trim()}\n` : content;
+    };
+    return read(template.content).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   function showForm(title, subtitle, fields, onSubmit, submitLabel = 'Salvar') {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -3032,17 +3175,40 @@ export async function startApplication(): Promise<void> {
       let input;
       if (field.type === 'select') input = `<select name="${esc(field.name)}" ${field.required ? 'required' : ''}>${field.options.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value) ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select>`;
       else if (field.type === 'textarea') input = `<textarea name="${esc(field.name)}" ${field.required ? 'required' : ''} placeholder="${esc(field.placeholder || '')}">${esc(value)}</textarea>`;
+      else if (field.type === 'richtext') {
+        const initialHtml = sanitizeRichTextHtml(field.htmlValue || plainTextToRichTextHtml(value));
+        input = `<div class="rich-text-editor"><div class="rich-text-toolbar" role="toolbar" aria-label="Formatação do texto">${[['bold', 'B', 'Negrito'], ['italic', 'I', 'Itálico'], ['underline', 'U', 'Sublinhado'], ['insertUnorderedList', '• Lista', 'Lista com marcadores'], ['insertOrderedList', '1. Lista', 'Lista numerada']].map(([command, label, title]) => `<button type="button" data-rich-command="${command}" data-rich-field="${esc(field.name)}" aria-label="${title}" title="${title}">${label}</button>`).join('')}</div><div id="modal-${esc(field.name)}" class="rich-text-surface" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${esc(field.label)}" data-rich-text="${esc(field.name)}" data-required="${Boolean(field.required)}" data-placeholder="${esc(field.placeholder || '')}">${initialHtml || '<p><br></p>'}</div></div>`;
+      }
       else if (field.type === 'file') input = `<input type="file" name="${esc(field.name)}" ${field.accept ? `accept="${esc(field.accept)}"` : ''} ${field.required ? 'required' : ''} />`;
       else input = `<input type="${esc(field.type || 'text')}" name="${esc(field.name)}" value="${esc(value)}" placeholder="${esc(field.placeholder || '')}" ${field.required ? 'required' : ''} ${field.min ? `min="${esc(field.min)}"` : ''} ${field.readonly ? 'readonly' : ''} />`;
-      return `<div class="form-field ${field.full ? 'full' : ''}"><label for="modal-${esc(field.name)}">${esc(field.label)}</label>${input.replace(`name="${esc(field.name)}"`, `id="modal-${esc(field.name)}" name="${esc(field.name)}"`)}${field.help ? `<small>${esc(field.help)}</small>` : ''}</div>`;
+      const labeledInput = field.type === 'richtext' ? input : input.replace(`name="${esc(field.name)}"`, `id="modal-${esc(field.name)}" name="${esc(field.name)}"`);
+      return `<div class="form-field ${field.full ? 'full' : ''}"><label for="modal-${esc(field.name)}">${esc(field.label)}</label>${labeledInput}${field.help ? `<small>${esc(field.help)}</small>` : ''}</div>`;
     }).join('');
     backdrop.innerHTML = `<section class="detail-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><div><span class="modal-kicker">PRUMO · REGISTRO LOCAL</span><h2>${esc(title)}</h2><p style="margin:6px 0 0;color:#929ba4;font-size:9px">${esc(subtitle)}</p></div><button class="icon-button" data-modal-close type="button" aria-label="Fechar">${icons.close}</button></div><form id="dynamicForm"><div class="modal-body"><div class="form-grid">${formFields}</div></div><div class="modal-actions"><button class="button-secondary" data-modal-close type="button">Cancelar</button><button class="button-primary" type="submit">${esc(submitLabel)}</button></div></form></section>`;
     document.body.append(backdrop);
     backdrop.querySelector('[data-modal-close]').focus();
     backdrop.addEventListener('click', (event) => { if (eventElement(event) === backdrop || eventElement(event).closest('[data-modal-close]')) backdrop.remove(); });
+    backdrop.querySelectorAll<HTMLButtonElement>('[data-rich-command]').forEach((button) => {
+      button.addEventListener('mousedown', (event) => event.preventDefault());
+      button.addEventListener('click', () => {
+        const editor = backdrop.querySelector<HTMLElement>(`[data-rich-text="${button.dataset.richField}"]`);
+        editor?.focus();
+        document.execCommand(button.dataset.richCommand, false);
+      });
+    });
     backdrop.querySelector('#dynamicForm').addEventListener('submit', (event) => {
       event.preventDefault();
-      const data = Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement).entries()) as Record<string, string>;
+      const data = Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement).entries()) as Record<string, any>;
+      for (const editor of Array.from(backdrop.querySelectorAll<HTMLElement>('[data-rich-text]'))) {
+        const fieldName = editor.dataset.richText || '';
+        const html = sanitizeRichTextHtml(editor.innerHTML);
+        const plain = richTextHtmlToPlainText(html);
+        if (editor.dataset.required === 'true' && !plain) {
+          editor.focus(); toast('Preencha o campo de atividades técnicas.', true); return;
+        }
+        data[fieldName] = plain;
+        data[`${fieldName}Html`] = html;
+      }
       const submit = event.currentTarget.querySelector('button[type="submit"]');
       submit.disabled = true; submit.textContent = 'Salvando…';
       Promise.resolve(onSubmit(data)).then(() => backdrop.remove()).catch((error) => {
@@ -3050,6 +3216,7 @@ export async function startApplication(): Promise<void> {
         toast(`Não foi possível salvar: ${error.message || 'erro inesperado.'}`, true);
       });
     });
+    return backdrop;
   }
   function makeProposal(noticeId, companyId) {
     const notice = state.notices.find((item) => item.id === noticeId) || state.notices[0];
@@ -3740,7 +3907,7 @@ export async function startApplication(): Promise<void> {
     const targetProfessional = requestedProfile?.companyId === co.id ? requestedProfile : null;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop cat-modal-backdrop';
-    backdrop.innerHTML = `<section class="detail-modal cat-create-modal" role="dialog" aria-modal="true" aria-labelledby="catIntakeTitle"><div class="modal-head"><div><span class="modal-kicker">ACERVO TÉCNICO · ${esc(co.short)}</span><h2 id="catIntakeTitle">Adicionar documento CAT</h2><p>Após a leitura, a CAT é salva automaticamente. Revise os dados, adicione campos quando necessário; as alterações também ficam salvas automaticamente.</p></div><div class="cat-intake-head-actions"><button class="button-secondary button-sm cat-intake-cancel" data-cat-cancel type="button" title="Cancelar a leitura e descartar os dados ainda não salvos">Cancelar</button><button class="button-secondary button-sm" data-cat-minimize type="button" hidden>Continuar em segundo plano</button><button class="icon-button" data-cat-close type="button" aria-label="Manter revisão em segundo plano" title="Manter revisão em segundo plano">${icons.close}</button></div></div><div class="cat-intake-stepper" aria-label="Etapas do cadastro"><span class="active" data-cat-step="file"><i>1</i>Documento e OCR</span><b></b><span data-cat-step="review"><i>2</i>Revisar dados</span></div><section class="cat-intake-body" id="catUploadStep"><div class="cat-upload-zone" data-cat-dropzone tabindex="0" role="group" aria-label="Solte o PDF da CAT aqui"><span class="cat-upload-glyph">⇧</span><strong id="catUploadTitle">Arraste o PDF da CAT para esta área</strong><small>PDF · até 30 MB · leitura automática após adicionar</small><button class="button-secondary button-sm" data-cat-pick type="button">Selecionar PDF</button><input id="catPdfInput" type="file" accept=".pdf,application/pdf" hidden></div><p class="cat-ocr-status" id="catOcrStatus" role="status" aria-live="polite">O texto do PDF é extraído localmente. PDFs digitalizados usam OCR Tesseract local e análise de dados pela NVIDIA.</p><div class="cat-intake-pages" id="catIntakePages" aria-label="Páginas lidas do documento"></div></section><form id="catReviewForm" class="cat-review-form" hidden><div class="modal-body cat-review-body"><div class="cat-ocr-summary" id="catOcrSummary" role="status"></div><div id="catTargetProfessionalNote" class="cat-target-professional-note" hidden></div><div class="cat-review-fields"><label class="form-field"><span>Número da CAT</span><input name="number" id="catReviewNumber" maxlength="120" required></label><label class="form-field"><span>Título resumido</span><input name="title" id="catReviewTitle" maxlength="300" required></label><label class="form-field"><span>CREA / emissor</span><input name="issuer" id="catReviewIssuer" maxlength="180" placeholder="Emissor não identificado"></label><label class="form-field"><span>Data de emissão</span><input name="date" id="catReviewDate" type="date"></label><label class="form-field cat-review-wide"><span>Obra e atividades técnicas descritas</span><div class="cat-activity-preview-wrap"><div class="cat-activity-preview-head"><strong>Atividades identificadas</strong><small>Estruturadas para conferência; edite o texto abaixo.</small></div><div id="catActivitiesRichPreview" class="cat-activities-rich-preview"></div></div><textarea name="activities" id="catReviewActivities" rows="5" maxlength="5000" required aria-label="Texto extraído para edição" placeholder="Revise e descreva as atividades conforme o documento original"></textarea></label><div class="cat-review-section-label cat-review-wide" data-cat-primary-professional><strong>Responsável principal</strong><small>Quando a CAT tiver mais de um responsável, os dados serão revisados por nome abaixo.</small></div><div id="catResponsibleReview" class="cat-responsible-review cat-review-wide" hidden></div><label class="form-field" data-cat-primary-professional><span>Nome do profissional</span><input name="professionalName" id="catReviewProfessionalName" maxlength="140" placeholder="Não identificado automaticamente"></label><label class="form-field" data-cat-primary-professional><span>Título profissional</span><input name="professionalTitle" id="catReviewProfessionalTitle" maxlength="120" placeholder="Ex.: Engenheiro civil"></label><label class="form-field cat-review-wide" data-cat-primary-professional><span>CREA / CAU / registro profissional</span><input name="professionalRegistration" id="catReviewProfessionalRegistration" maxlength="80" placeholder="Número e conselho, se constarem"></label><label class="form-field cat-review-wide"><span>Palavras-chave para comparação com editais</span><input name="keywords" id="catReviewKeywords" maxlength="1000" placeholder="Ex.: pavimentação, drenagem, concreto"></label><label class="form-field cat-review-wide"><span>Link de referência (opcional)</span><input name="reference" id="catReviewReference" type="url" placeholder="https://…"></label><section class="cat-custom-fields cat-review-wide" aria-labelledby="catCustomFieldsTitle"><div class="cat-custom-fields-heading"><div><strong id="catCustomFieldsTitle">Campos adicionais</strong><small>Inclua informações específicas desta CAT.</small></div><button class="button-secondary button-sm" data-cat-add-field type="button">+ Adicionar campo</button></div><div class="cat-custom-fields-list" data-cat-custom-fields></div></section></div><details class="cat-extracted-details"><summary>Texto reconhecido · conferir no PDF original</summary><textarea id="catRecognizedText" rows="7" readonly></textarea></details></div><div class="modal-actions cat-autosave-footer"><small id="catAutoSaveStatus" role="status" aria-live="polite">A CAT será salva automaticamente após a leitura.</small><button class="button-secondary" data-cat-change-file type="button">Trocar PDF</button><button class="button-secondary" data-cat-autosave-retry type="button" hidden>Tentar novamente</button><button class="button-primary" type="submit" hidden>Salvar CAT</button></div></form></section>`;
+    backdrop.innerHTML = `<section class="detail-modal cat-create-modal" role="dialog" aria-modal="true" aria-labelledby="catIntakeTitle"><div class="modal-head"><div><span class="modal-kicker">ACERVO TÉCNICO · ${esc(co.short)}</span><h2 id="catIntakeTitle">Adicionar documento CAT</h2><p>Após a leitura, a CAT é salva automaticamente. Revise os dados, adicione campos quando necessário; as alterações também ficam salvas automaticamente.</p></div><div class="cat-intake-head-actions"><button class="button-secondary button-sm cat-intake-cancel" data-cat-cancel type="button" title="Cancelar a leitura e descartar os dados ainda não salvos">Cancelar</button><button class="button-secondary button-sm" data-cat-minimize type="button" hidden>Continuar em segundo plano</button><button class="icon-button" data-cat-close type="button" aria-label="Manter revisão em segundo plano" title="Manter revisão em segundo plano">${icons.close}</button></div></div><div class="cat-intake-stepper" aria-label="Etapas do cadastro"><span class="active" data-cat-step="file"><i>1</i>Documento e OCR</span><b></b><span data-cat-step="review"><i>2</i>Revisar dados</span></div><section class="cat-intake-body" id="catUploadStep"><div class="cat-upload-zone" data-cat-dropzone tabindex="0" role="group" aria-label="Solte o PDF da CAT aqui"><span class="cat-upload-glyph">⇧</span><strong id="catUploadTitle">Arraste o PDF da CAT para esta área</strong><small>PDF · até 30 MB · leitura automática após adicionar</small><button class="button-secondary button-sm" data-cat-pick type="button">Selecionar PDF</button><input id="catPdfInput" type="file" accept=".pdf,application/pdf" hidden></div><p class="cat-ocr-status" id="catOcrStatus" role="status" aria-live="polite">A NVIDIA faz o OCR do PDF. Após salvar a CAT, o MiniCPM organiza os dados-chave extraídos.</p><div class="cat-intake-pages" id="catIntakePages" aria-label="Páginas lidas do documento"></div></section><form id="catReviewForm" class="cat-review-form" hidden><div class="modal-body cat-review-body"><div class="cat-ocr-summary" id="catOcrSummary" role="status"></div><div id="catTargetProfessionalNote" class="cat-target-professional-note" hidden></div><div class="cat-review-fields"><label class="form-field"><span>Número da CAT</span><input name="number" id="catReviewNumber" maxlength="120" required></label><label class="form-field"><span>Título resumido</span><input name="title" id="catReviewTitle" maxlength="300" required></label><label class="form-field"><span>CREA / emissor</span><input name="issuer" id="catReviewIssuer" maxlength="180" placeholder="Emissor não identificado"></label><label class="form-field"><span>Data de emissão</span><input name="date" id="catReviewDate" type="date"></label><label class="form-field cat-review-wide"><span>Obra e atividades técnicas descritas</span><div class="cat-activity-preview-wrap"><div class="cat-activity-preview-head"><strong>Atividades identificadas</strong><small>Estruturadas para conferência; edite o texto abaixo.</small></div><div id="catActivitiesRichPreview" class="cat-activities-rich-preview"></div></div><textarea name="activities" id="catReviewActivities" rows="5" maxlength="5000" required aria-label="Texto extraído para edição" placeholder="Revise e descreva as atividades conforme o documento original"></textarea></label><div class="cat-review-section-label cat-review-wide" data-cat-primary-professional><strong>Responsável principal</strong><small>Quando a CAT tiver mais de um responsável, os dados serão revisados por nome abaixo.</small></div><div id="catResponsibleReview" class="cat-responsible-review cat-review-wide" hidden></div><label class="form-field" data-cat-primary-professional><span>Nome do profissional</span><input name="professionalName" id="catReviewProfessionalName" maxlength="140" placeholder="Não identificado automaticamente"></label><label class="form-field" data-cat-primary-professional><span>Título profissional</span><input name="professionalTitle" id="catReviewProfessionalTitle" maxlength="120" placeholder="Ex.: Engenheiro civil"></label><label class="form-field cat-review-wide" data-cat-primary-professional><span>CREA / CAU / registro profissional</span><input name="professionalRegistration" id="catReviewProfessionalRegistration" maxlength="80" placeholder="Número e conselho, se constarem"></label><label class="form-field cat-review-wide"><span>Palavras-chave para comparação com editais</span><input name="keywords" id="catReviewKeywords" maxlength="1000" placeholder="Ex.: pavimentação, drenagem, concreto"></label><label class="form-field cat-review-wide"><span>Link de referência (opcional)</span><input name="reference" id="catReviewReference" type="url" placeholder="https://…"></label><section class="cat-custom-fields cat-review-wide" aria-labelledby="catCustomFieldsTitle"><div class="cat-custom-fields-heading"><div><strong id="catCustomFieldsTitle">Campos adicionais</strong><small>Inclua informações específicas desta CAT.</small></div><button class="button-secondary button-sm" data-cat-add-field type="button">+ Adicionar campo</button></div><div class="cat-custom-fields-list" data-cat-custom-fields></div></section></div><details class="cat-extracted-details"><summary>Texto reconhecido · conferir no PDF original</summary><textarea id="catRecognizedText" rows="7" readonly></textarea></details></div><div class="modal-actions cat-autosave-footer"><small id="catAutoSaveStatus" role="status" aria-live="polite">A CAT será salva automaticamente após a leitura.</small><button class="button-secondary" data-cat-change-file type="button">Trocar PDF</button><button class="button-secondary" data-cat-autosave-retry type="button" hidden>Tentar novamente</button><button class="button-primary" type="submit" hidden>Salvar CAT</button></div></form></section>`;
     document.body.append(backdrop);
     if (targetProfessional) {
       const targetNote = backdrop.querySelector('#catTargetProfessionalNote');
@@ -4038,7 +4205,7 @@ export async function startApplication(): Promise<void> {
                   });
                   if (sequence !== readSequence) { intakeProgressToast?.finish('Leitura interrompida ao fechar o cadastro.'); return; }
                   pageResults.push({ page: page.page, result: result.result, text: result.text });
-                  updateIntakePage(page.page, 'OCR concluído; revisão do texto em andamento.', 'processing');
+                  updateIntakePage(page.page, 'OCR NVIDIA concluído; os dados serão organizados depois que a CAT for salva.', 'complete');
               } catch (error) {
                 if (sequence !== readSequence || intakeSignal.aborted) return;
                 failedPages.push(page.page);
@@ -4052,54 +4219,21 @@ export async function startApplication(): Promise<void> {
             }
             pageResults.sort((a, b) => a.page - b.page);
             if (!pageResults.length) throw new Error(failedPages.length ? `falha nas páginas ${failedPages.join(', ')}` : 'nenhuma página foi processada');
-            const reviewFailedPages: number[] = [];
-            const reviewContextPages = new Map<number, { number: number; text: string }>(catPageTextMap(localDocument.text).map((page) => [Number(page.number), page]));
-            for (const pageResult of pageResults) {
-              const existing = reviewContextPages.get(pageResult.page)?.text || '';
-              reviewContextPages.set(pageResult.page, { number: pageResult.page, text: replaceCatPageOcrText(existing, pageResult.text) });
-            }
-            for (const [offset, pageResult] of pageResults.entries()) {
-              if (sequence !== readSequence) { intakeProgressToast?.finish('Leitura interrompida ao trocar o arquivo.'); return; }
-              status.textContent = `Extração de dados-chave pela NVIDIA · página ${pageResult.page}/${detectedImagePages.length}…`;
-              intakeProgressToast?.update(`Dados-chave da NVIDIA · página ${pageResult.page}`, offset, pageResults.length);
-              try {
-                const review = await reviewCatOcrPage(file.name, pageResult.page, pageResult.text, {
-                  documentContext: catOcrReviewContext(null, reviewContextPages, pageResult.page),
-                  signal: intakeSignal,
-                  onProgress: ({ segment, total, completed, phase, elapsedSeconds, retryAttempt, error }) => {
-                    status.textContent = phase === 'aguardando'
-                      ? `Aguardando NVIDIA · página ${pageResult.page} · segmento ${segment}/${total} · ${elapsedSeconds}s`
-                      : phase === 'retry'
-                      ? `NVIDIA falhou (${error || 'erro transitório'}); tentativa ${retryAttempt} · página ${pageResult.page} · segmento ${segment}/${total}`
-                      : `${phase === 'extraído' ? 'Dados-chave extraídos' : 'Extração NVIDIA'} · página ${pageResult.page} · ${segment}/${total}`;
-                    intakeProgressToast?.update(status.textContent, completed, total, 'segmentos');
-                  },
-                });
-                if (sequence !== readSequence) { intakeProgressToast?.finish('Leitura interrompida ao fechar o cadastro.'); return; }
-                pageResult.reviewedText = review.text;
-                pageResult.reviewModel = review.model;
-                reviewContextPages.set(pageResult.page, { number: pageResult.page, text: replaceCatPageOcrReview(reviewContextPages.get(pageResult.page)?.text || '', pageResult.text, review.text) });
-                updateIntakePage(pageResult.page, review.text, 'complete');
-              } catch (error) {
-                if (intakeSignal.aborted) return;
-                reviewFailedPages.push(pageResult.page);
-                updateIntakePage(pageResult.page, pageResult.text, 'failed');
-              }
-              intakeProgressToast?.update(`Página ${pageResult.page} revisada e adicionada`, offset + 1, pageResults.length);
-            }
             const fieldsFromPages = (key) => [...new Set(pageResults.map(({ result }) => String(result.fields?.[key] || '').trim()).filter(Boolean))];
             ocrRecord = {
               model: pageResults[0].result.model,
               provider: pageResults[0].result.provider,
               providers: [...new Set(pageResults.map(({ result }) => result.provider).filter(Boolean))],
               pagesRead: pageResults.length,
-              pagesReviewed: pageResults.filter((page) => page.reviewedText).length,
+              pagesReviewed: 0,
               pagesTotal: detectedImagePages.length,
               ocrPages: pageResults.map(({ page }) => page),
-              reviewModels: Object.fromEntries(pageResults.filter((page) => page.reviewedText).map((page) => [page.page, page.reviewModel || 'meta/llama-3.2-11b-vision-instruct'])),
-              reviewVersions: Object.fromEntries(pageResults.filter((page) => page.reviewedText).map((page) => [page.page, CAT_OCR_REVIEW_VERSION])),
+              reviewModels: {},
+              reviewVersions: {},
+              reviewPendingPages: pageResults.map(({ page }) => page),
+              reviewSources: pageResults.map(({ page, text }) => ({ page, text })),
               failedPages,
-              reviewFailedPages,
+              reviewFailedPages: [],
               fields: {
                 number: fieldsFromPages('number')[0] || '',
                 title: fieldsFromPages('title')[0] || '',
@@ -4112,7 +4246,6 @@ export async function startApplication(): Promise<void> {
               extractedText: mergeCatPageTexts(localDocument.text, pageResults, localDocument.pageCount),
             };
             if (failedPages.length) ocrError = `OCR sem resposta nas páginas ${failedPages.join(', ')}`;
-            if (reviewFailedPages.length) ocrError = [ocrError, `extração NVIDIA pendente nas páginas ${reviewFailedPages.join(', ')}`].filter(Boolean).join('; ');
           } catch (error) { ocrError = error.message || 'OCR NVIDIA/local indisponível.'; }
         } else if (!catPageOcrAvailable && detectedImagePages.length) {
           ocrError = `OCR não configurado para imagens nas páginas ${detectedImagePages.map((page) => page.page).join(', ')}`;
@@ -4160,13 +4293,13 @@ export async function startApplication(): Promise<void> {
         const ocrProviderLabel = [...new Set(ocrRecord?.providers || [ocrRecord?.provider].filter(Boolean))]
           .map((provider) => provider === 'nvidia-api' ? 'NVIDIA' : 'Tesseract local como fallback').join(' + ');
         const note = ocrRecord?.model
-          ? `OCR ${ocrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}) leu ${ocrRecord.pagesRead || 1}${ocrRecord.pagesTotal ? ` de ${ocrRecord.pagesTotal}` : ''} página(s)${ocrRecord.pagesReviewed ? `; NVIDIA estruturou dados-chave de ${ocrRecord.pagesReviewed}` : ''}${Number(ocrRecord.fields?.confidence) ? ` · confiança média ${Math.round(ocrRecord.fields.confidence * 100)}%` : ''}${ocrError ? ` · ${ocrError}` : ''}. Os dados estruturados seguem na leitura do PDF e o OCR original fica preservado. Confira os campos e o documento; a CAT será salva automaticamente.${professionalNote}`
+          ? `OCR ${ocrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}) leu ${ocrRecord.pagesRead || 1}${ocrRecord.pagesTotal ? ` de ${ocrRecord.pagesTotal}` : ''} página(s)${ocrRecord.reviewPendingPages?.length ? '; MiniCPM organizará os dados-chave depois que a CAT for salva' : ''}${Number(ocrRecord.fields?.confidence) ? ` · confiança média ${Math.round(ocrRecord.fields.confidence * 100)}%` : ''}${ocrError ? ` · ${ocrError}` : ''}. O OCR original fica preservado. Confira os campos e o documento; a CAT será salva automaticamente.${professionalNote}`
           : ocrError
             ? `OCR NVIDIA/local não concluiu: ${ocrError}. ${extractedText ? 'O texto selecionável foi extraído localmente e usado para sugerir alguns campos.' : 'Confira e preencha os campos usando o PDF original.'} A CAT será salva automaticamente.${professionalNote}`
             : extractedText
               ? `Texto selecionável extraído localmente${detectedImagePages.length ? `; imagem detectada nas páginas ${detectedImagePages.map((page) => page.page).join(', ')}` : ''}${imagePageLimit ? '; páginas posteriores ao limite de leitura automática não foram verificadas' : ''}. Confira os campos e o PDF original; a CAT será salva automaticamente.${professionalNote}`
               : 'PDF digitalizado sem texto selecionável. OCR NVIDIA e fallback local não estão disponíveis; confira o documento, ajuste os campos e a CAT será salva automaticamente.';
-        if (ocrRecord || professionalAnalysis) intakeProgressToast?.finish(`Leitura concluída${ocrRecord ? ` · ${ocrRecord.pagesRead}/${ocrRecord.pagesTotal} páginas com imagem; dados-chave estruturados pela NVIDIA em ${ocrRecord.pagesReviewed}` : ''}${professionalAnalysis ? ` · ${professionalAnalysis.professionals.length} profissional(is) identificado(s) no documento integral` : ''}${ocrError ? ` · ${ocrError}` : ''}${professionalAnalysisError ? ` · ${professionalAnalysisError}` : ''}.`, Boolean(ocrRecord?.failedPages?.length || ocrRecord?.reviewFailedPages?.length || professionalAnalysisError));
+        if (ocrRecord || professionalAnalysis) intakeProgressToast?.finish(`OCR concluído${ocrRecord ? ` · ${ocrRecord.pagesRead}/${ocrRecord.pagesTotal} páginas com imagem${ocrRecord.reviewPendingPages?.length ? '; MiniCPM começa após salvar a CAT' : ''}` : ''}${professionalAnalysis ? ` · ${professionalAnalysis.professionals.length} profissional(is) identificado(s) no documento integral` : ''}${ocrError ? ` · ${ocrError}` : ''}${professionalAnalysisError ? ` · ${professionalAnalysisError}` : ''}.`, Boolean(ocrRecord?.failedPages?.length || ocrRecord?.reviewFailedPages?.length || professionalAnalysisError));
         showReview(fields, extractedText, note, professionalAnalysis?.professionals || []);
         reviewForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       } catch (error) {
@@ -4299,9 +4432,9 @@ export async function startApplication(): Promise<void> {
         const professionalAnalysisRecord = professionalAnalysis ? { ...professionalAnalysis, pagesAnalyzed: catPageTextMap(extractedText).length, status: 'complete' } : { status: professionalAnalysisError ? 'pending' : 'not-run', error: professionalAnalysisError };
         const savedOcrProviderLabel = [...new Set(ocrRecord?.providers || [ocrRecord?.provider].filter(Boolean))]
           .map((provider) => provider === 'nvidia-api' ? 'NVIDIA' : 'Tesseract local como fallback').join(' + ');
-        const extractionNote = `${ocrRecord?.model ? `OCR ${savedOcrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}). ${coverageNote}` : ''}${imageNote}${extractedText ? 'Texto de todas as páginas associado ao PDF.' : 'PDF sem texto reconhecido.'}${professionalAnalysis ? ` Análise integral executada uma vez: ${assignedProfessionals.length} profissional(is) associado(s) ao próprio nome.` : professionalAnalysisError ? ` Identificação integral pendente: ${professionalAnalysisError}.` : ''} Confira o documento original antes de usar os dados.`;
+        const extractionNote = `${ocrRecord?.model ? `OCR ${savedOcrProviderLabel || 'NVIDIA/local'} (${ocrRecord.model}). ${coverageNote}` : ''}${imageNote}${extractedText ? 'Texto de todas as páginas associado ao PDF.' : 'PDF sem texto reconhecido.'}${ocrRecord?.reviewPendingPages?.length ? ` MiniCPM organizará os dados-chave após o cadastro, nas páginas ${ocrRecord.reviewPendingPages.join(', ')}.` : ''}${professionalAnalysis ? ` Análise integral executada uma vez: ${assignedProfessionals.length} profissional(is) associado(s) ao próprio nome.` : professionalAnalysisError ? ` Identificação integral pendente: ${professionalAnalysisError}.` : ''} Confira o documento original antes de usar os dados.`;
         const ocrPageModels = Object.fromEntries((ocrRecord?.ocrPages || []).map((page) => [page, CAT_PAGE_OCR_MODEL]));
-        await saveCompanyFileBlob(savedDocument.id, { blob: selectedFile, name: selectedFile.name, type: selectedFile.type || 'application/pdf', extractedText, extractionNote, ocrPages: ocrRecord?.ocrPages || [], imagePages: preparedDocument?.imagePages || [], catOcrPageModels: ocrPageModels, catOcrReviewModels: ocrRecord?.reviewModels || {}, catOcrReviewVersions: ocrRecord?.reviewVersions || {}, professionalAnalysis: professionalAnalysisRecord });
+        await saveCompanyFileBlob(savedDocument.id, { blob: selectedFile, name: selectedFile.name, type: selectedFile.type || 'application/pdf', extractedText, extractionNote, ocrPages: ocrRecord?.ocrPages || [], imagePages: preparedDocument?.imagePages || [], catOcrPageModels: ocrPageModels, catOcrReviewModels: ocrRecord?.reviewModels || {}, catOcrReviewVersions: ocrRecord?.reviewVersions || {}, catOcrReviewPendingPages: ocrRecord?.reviewPendingPages || [], catOcrReviewErrors: {}, professionalAnalysis: professionalAnalysisRecord });
         savedDocument.category = 'cat'; savedDocument.linkedRecordId = catId;
         savedDocument.indexed = catExtractedTextHasContent(extractedText); savedDocument.extractionNote = extractionNote;
         const primaryProfessional = assignedProfessionals[0];
@@ -4318,13 +4451,14 @@ export async function startApplication(): Promise<void> {
         savedCatRecord = cat; savedCatDocument = savedDocument;
         saveState();
         refreshCatsListAfterSave();
+        if (ocrRecord?.reviewSources?.length) void organizeSavedCatKeyFacts(savedDocument.id, co.id, cat, ocrRecord);
         submit.hidden = true; retryButton.hidden = true; changeFileButton.hidden = true;
         cancelButton.hidden = true;
         autoSaveStatus.textContent = 'CAT salva automaticamente. As alterações desta revisão também são salvas automaticamente.';
         if (intakeMinimized) {
           closeIntake();
         }
-        toast(`CAT ${cat.number} salva automaticamente${assignedProfessionals.length ? ` e vinculada a ${assignedProfessionals.length} perfil(is) profissional(is)` : ''} de ${co.short}.`);
+        toast(`CAT ${cat.number} salva${assignedProfessionals.length ? ` e vinculada a ${assignedProfessionals.length} perfil(is) profissional(is)` : ''}${ocrRecord?.reviewSources?.length ? '. MiniCPM iniciou a organização dos dados em segundo plano' : ''}.`);
       } catch (error) {
         catSaveInProgress = false;
         submit.disabled = false; submit.textContent = 'Tentar salvar CAT';
@@ -4343,13 +4477,15 @@ export async function startApplication(): Promise<void> {
     if (!existing) { openCatIntake(co.id); return; }
     const today = new Date().toISOString().slice(0, 10);
     const currentDocument = (state.companyDocuments || []).find((file) => file.id === existing?.documentId && file.company === co.id);
-    const linkedProfile = state.professionalProfiles.find((profile) => profile.companyId === co.id && (profile.catIds || []).includes(existing.id));
-    showForm(existing ? `Editar CAT · ${co.short}` : `Cadastrar CAT · ${co.short}`, 'A CAT é um documento de certificação técnica da empresa. Anexe o PDF original; atividades e palavras-chave ajudam a comparar os requisitos dos editais de construção.', [
+    const professionalProfileIds = new Set([...(existing.professionalProfileIds || []), ...(existing.professionals || []).map((person) => person.profileId).filter(Boolean)]);
+    const professionalNames = new Set([existing.professionalName, ...(existing.professionals || []).map((person) => person.name)].map((name) => normalizeProfessionalName(name)).filter(Boolean));
+    const linkedProfile = state.professionalProfiles.find((profile) => profile.companyId === co.id && ((profile.catIds || []).includes(existing.id) || professionalProfileIds.has(profile.id) || professionalNames.has(normalizeProfessionalName(profile.name))));
+    const editModal = showForm(existing ? `Editar CAT · ${co.short}` : `Cadastrar CAT · ${co.short}`, 'A CAT é um documento de certificação técnica da empresa. Anexe o PDF original; atividades e palavras-chave ajudam a comparar os requisitos dos editais de construção.', [
       { name: 'number', label: 'Número da CAT', value: existing?.number || '', required: true },
       { name: 'title', label: 'Título resumido', value: existing?.title || '', required: true },
       { name: 'issuer', label: 'CREA / emissor', value: existing?.issuer || '' },
       { name: 'date', label: 'Data de emissão', type: 'date', value: existing?.date || today },
-      { name: 'activities', label: 'Obra e atividades técnicas descritas', type: 'textarea', full: true, value: existing?.activities || '', placeholder: 'Ex.: pavimentação em paralelepípedo, drenagem pluvial, reforma predial…', required: true },
+      { name: 'activities', label: 'Obra e atividades técnicas descritas', type: 'richtext', full: true, value: existing?.activities || '', htmlValue: existing?.activitiesHtml || '', placeholder: 'Ex.: pavimentação em paralelepípedo, drenagem pluvial, reforma predial…', required: true },
       { name: 'keywords', label: 'Palavras-chave para comparação', full: true, value: existing?.keywords || '', placeholder: 'Separe por vírgula: pavimentação, drenagem, concreto…' },
       { name: 'professionalName', label: 'Nome do responsável técnico', value: existing?.professionalName || linkedProfile?.name || '', placeholder: 'Conforme consta na CAT' },
       { name: 'professionalTitle', label: 'Título profissional', value: existing?.professionalTitle || linkedProfile?.title || '', placeholder: 'Ex.: Engenheiro civil' },
@@ -4379,7 +4515,7 @@ export async function startApplication(): Promise<void> {
       if (!linkedDocumentId) throw new Error('Anexe o PDF original da CAT para cadastrá-la no acervo técnico da empresa.');
       const attachedDocument = (state.companyDocuments || []).find((file) => file.id === linkedDocumentId);
       if (attachedDocument) { attachedDocument.category = 'cat'; attachedDocument.linkedRecordId = catId; }
-      const cat = { id: catId, number: data.number.trim(), title: data.title.trim(), issuer: data.issuer.trim(), date: data.date, activities: data.activities.trim(), keywords: data.keywords.trim(), reference: safeExternalUrl(data.reference), professionalName: data.professionalName.trim(), professionalTitle: data.professionalTitle.trim(), professionalRegistration: data.professionalRegistration.trim(), professionals: Array.isArray(existing?.professionals) ? existing.professionals.map((person) => ({ ...person })) : [], professionalAnalysis: existing?.professionalAnalysis || null, professionalProfileIds: existing?.professionalProfileIds || [], documentId: linkedDocumentId, documentName: linkedDocumentName, updatedAt: new Date().toISOString() };
+      const cat = { id: catId, number: data.number.trim(), title: data.title.trim(), issuer: data.issuer.trim(), date: data.date, activities: data.activities.trim(), activitiesHtml: data.activitiesHtml || existing?.activitiesHtml || plainTextToRichTextHtml(data.activities), keywords: data.keywords.trim(), reference: safeExternalUrl(data.reference), professionalName: data.professionalName.trim(), professionalTitle: data.professionalTitle.trim(), professionalRegistration: data.professionalRegistration.trim(), professionals: Array.isArray(existing?.professionals) ? existing.professionals.map((person) => ({ ...person })) : [], professionalAnalysis: existing?.professionalAnalysis || null, professionalProfileIds: existing?.professionalProfileIds || [], documentId: linkedDocumentId, documentName: linkedDocumentName, updatedAt: new Date().toISOString() };
       const index = co.cats.findIndex((entry) => entry.id === cat.id);
       if (index >= 0) co.cats[index] = cat; else co.cats.unshift(cat);
       if (cat.professionals.length) {
@@ -4390,6 +4526,25 @@ export async function startApplication(): Promise<void> {
       state.memories = state.memories.slice(0, 100);
       saveState(); render(); toast(`CAT ${cat.number} ${existing ? 'atualizada' : 'cadastrada'} no perfil ${co.short}.`);
     }, existing ? 'Salvar CAT' : 'Cadastrar CAT');
+    if (linkedProfile) {
+      const professionalField = editModal.querySelector('[name="professionalName"]')?.closest('.form-field');
+      if (professionalField) {
+        const profileLink = document.createElement('button');
+        profileLink.type = 'button';
+        profileLink.className = 'cat-professional-profile-link form-field full';
+        profileLink.innerHTML = `<span class="cat-professional-profile-mark">${esc(String(linkedProfile.name || 'P').trim().slice(0, 1).toUpperCase())}</span><span class="cat-professional-profile-copy"><small>PERFIL PROFISSIONAL VINCULADO</small><strong>${esc(linkedProfile.name || 'Profissional sem nome')}</strong><span>${esc([linkedProfile.title, linkedProfile.registration].filter(Boolean).join(' · ') || 'Dados do perfil profissional')}</span></span><span class="cat-professional-profile-action">Abrir perfil <b>→</b></span>`;
+        professionalField.before(profileLink);
+        profileLink.addEventListener('click', () => {
+          state.selectedProfessionalProfile = linkedProfile.id;
+          state.activeCompany = linkedProfile.companyId === 'isocon' ? 'isocon' : 'confidence';
+          state.page = 'perfil-profissional';
+          saveState();
+          editModal.remove();
+          render();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
+    }
   }
 
   function openProfessionalProfileForm(profileId) {
@@ -5161,7 +5316,7 @@ export async function startApplication(): Promise<void> {
           ...(!multiCatReaderMode ? { trechosPorPagina: pageContext } : {}),
           limite: multiCatReaderMode
             ? 'Compare somente as CATs e evidências fornecidas. Cite o número da CAT e a página. Não trate ausência de trecho como ausência de capacidade; sinalize quando o texto não estiver disponível.'
-            : 'Use apenas os trechos fornecidos. O textoOCRComplementar é continuação da leitura do PDF e complementa a camada pesquisável da mesma página; prefira os dados-chave estruturados pela NVIDIA, sem descartar o texto PDF. O OCR pode conter ruído; preserve valores e nomes somente quando legíveis e cite a página.',
+            : 'Use apenas os trechos fornecidos. O textoOCRComplementar é continuação da leitura do PDF e complementa a camada pesquisável da mesma página; prefira os dados-chave estruturados pelo MiniCPM, sem descartar o texto PDF. O OCR pode conter ruído; preserve valores e nomes somente quando legíveis e cite a página.',
         }),
         summary: `CAT ${cat.number || ''}`,
         documentCount: multiCatReaderMode ? catEvidence.length : 1,

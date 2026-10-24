@@ -42,6 +42,7 @@ export interface CatProfessionalAssignment extends LocalRecord {
 export interface CatRecord extends LocalRecord {
   id: string;
   number: string;
+  activitiesHtml?: string;
   professionals?: CatProfessionalAssignment[];
   professionalProfileIds?: string[];
   professionalAnalysis?: LocalRecord;

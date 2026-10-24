@@ -1122,9 +1122,7 @@ async function assistantJsonCompletion(prompt) {
 }
 
 async function reviewCatOcrText(payload, signal = undefined) {
-  const settings = nvidiaOcrSettings();
-  if (!settings.apiKey) { const error = new Error('NVIDIA_API_KEY não está configurada no .env do BelaVista nem no ambiente do servidor.'); error.statusCode = 503; throw error; }
-  if (!settings.endpoint) { const error = new Error('NVIDIA_API_URL inválida. Use HTTPS ou um endpoint local.'); error.statusCode = 400; throw error; }
+  if (!await miniCpmHealthy()) { const error = new Error('MiniCPM5-2B não está disponível pelo endpoint ngrok protegido.'); error.statusCode = 503; throw error; }
   const rawText = String(payload.ocrText || '').trim();
   if (!rawText) throw new Error('Não há texto da página para extrair dados-chave.');
   if (rawText.length > 20000) { const error = new Error('A página excede 20.000 caracteres; a fonte original foi preservada sem extração parcial.'); error.statusCode = 413; throw error; }
@@ -1134,7 +1132,7 @@ async function reviewCatOcrText(payload, signal = undefined) {
     : '';
   const segmentIndex = Math.max(1, Number(payload.segmentIndex) || 1);
   const segmentTotal = Math.max(segmentIndex, Number(payload.segmentTotal) || 1);
-  const headers = { authorization: `Bearer ${settings.apiKey}`, 'content-type': 'application/json', accept: 'application/json' };
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
   const systemPrompt = [
     'Você extrai dados-chave de páginas de CATs de engenharia. Recebe texto de uma única página, que pode vir de OCR imperfeito; não recebeu a imagem e nunca deve afirmar que conferiu o PDF visualmente.',
     'Extraia apenas informações úteis e explícitas no bloco atual: número e tipo de CAT/ART, profissional e registros (CREA, RNP), empresas, contratante, obra/serviço, município, contrato, datas, situação, atividades técnicas, itens, quantitativos, unidades, valores, normas e ressalvas relevantes.',
@@ -1172,12 +1170,13 @@ async function reviewCatOcrText(payload, signal = undefined) {
       previousReviewedSegments ? `Fatos já extraídos de segmentos anteriores desta página; evite duplicar:\n${previousReviewedSegments}` : '',
       'Tarefa: retorne somente o JSON de fatos-chave explícitos neste segmento. Não transcreva o texto.',
     ].filter(Boolean).join('\n\n');
-    const upstream = await fetch(settings.endpoint, {
+    const upstream = await portRouterFetch(MINICPM_PORT, '/v1/chat/completions', {
       method: 'POST', headers,
       body: JSON.stringify({
-        model: settings.model,
+        model: MINICPM_MODEL,
         messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
         temperature: 0.05, max_tokens: 1800, stream: false,
+        chat_template_kwargs: { enable_thinking: false },
       }),
       ...(signal ? { signal } : {}),
     });
@@ -1185,8 +1184,8 @@ async function reviewCatOcrText(payload, signal = undefined) {
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { }
     if (!upstream.ok) {
-      const message = body?.error?.message || body?.detail || raw || 'Falha na extração de dados-chave pela NVIDIA.';
-      const error = new Error(`NVIDIA HTTP ${upstream.status}: ${String(message).slice(0, 260)}`);
+      const message = body?.error?.message || body?.detail || raw || 'Falha na extração de dados-chave pelo MiniCPM.';
+      const error = new Error(`MiniCPM HTTP ${upstream.status}: ${String(message).slice(0, 260)}`);
       error.statusCode = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
       throw error;
     }
@@ -1200,7 +1199,7 @@ async function reviewCatOcrText(payload, signal = undefined) {
     if (Array.isArray(parsed.value)) parsed.value = { facts: parsed.value };
     if (!parsed.value || !Array.isArray(parsed.value.facts)) {
       const preview = content.slice(0, 180).replace(/\s+/g, ' ');
-      const error = new Error(`NVIDIA não concluiu o JSON de dados-chave do trecho ${index + 1}/${chunks.length} (finish_reason=${completion?.finish_reason || 'ausente'}${preview ? `; ${preview}` : ''}).`);
+      const error = new Error(`MiniCPM não concluiu o JSON de dados-chave do trecho ${index + 1}/${chunks.length} (finish_reason=${completion?.finish_reason || 'ausente'}${preview ? `; ${preview}` : ''}).`);
       error.statusCode = 502;
       throw error;
     }
@@ -1216,7 +1215,7 @@ async function reviewCatOcrText(payload, signal = undefined) {
     reviewedChunks.push(...facts);
   }
   const uniqueFacts = [...new Map(reviewedChunks.map((fact) => [`${fact.category}|${fact.label}|${fact.value}`.toLocaleLowerCase('pt-BR'), fact])).values()];
-  return { rawText, keyFacts: uniqueFacts, model: settings.model, provider: 'nvidia-api', reviewVersion: CAT_OCR_REVIEW_VERSION, segmentIndex, segmentTotal };
+  return { rawText, keyFacts: uniqueFacts, model: MINICPM_MODEL, provider: 'minicpm5-2b-ngrok', reviewVersion: CAT_OCR_REVIEW_VERSION, segmentIndex, segmentTotal };
 }
 
 async function analyzeCatProfessionalsWithNvidia(payload, signal = undefined) {
@@ -3280,13 +3279,12 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === '/api/ocr/status' && request.method === 'GET') {
     await loadBelavistaNvidiaEnvironment().catch(() => {});
     const settings = nvidiaOcrSettings();
-    const [catPage, tunnelOrigin] = await Promise.all([
-      localOcrServiceHealth(), portRouterOrigin().catch(() => ''),
+    const [catPage, tunnelOrigin, catReviewConfigured] = await Promise.all([
+      localOcrServiceHealth(), portRouterOrigin().catch(() => ''), miniCpmHealthy(),
     ]);
     const localCatPageConfigured = Boolean(catPage?.ready && catPage?.model === LOCAL_OCR_MODEL);
     const nvidiaCatPageConfigured = Boolean(settings.apiKey && settings.endpoint);
     const catPageConfigured = nvidiaCatPageConfigured || localCatPageConfigured;
-    const catReviewConfigured = nvidiaCatPageConfigured;
     return json(response, 200, {
       configured: Boolean(settings.apiKey && settings.endpoint), model: settings.model, endpointHost: settings.endpointHost,
       catPageConfigured,
@@ -3295,7 +3293,7 @@ const server = http.createServer(async (request, response) => {
       catPagePrimaryProvider: nvidiaCatPageConfigured ? 'nvidia-api' : 'local-tesseract',
       catPageFallbackProvider: nvidiaCatPageConfigured && localCatPageConfigured ? 'local-tesseract' : '',
       catPageEndpoint: tunnelOrigin ? `${tunnelOrigin}/${LOCAL_OCR_PORT}/v1/ocr` : '',
-      catReviewConfigured, catReviewModel: settings.model, catReviewProvider: 'nvidia-api', catReviewEndpoint: settings.endpointHost,
+      catReviewConfigured, catReviewModel: MINICPM_MODEL, catReviewProvider: 'minicpm5-2b-ngrok', catReviewEndpoint: tunnelOrigin ? `${tunnelOrigin}/${MINICPM_PORT}/v1/chat/completions` : '',
       envLoaded: settings.envLoaded,
     });
   }
@@ -3347,14 +3345,13 @@ const server = http.createServer(async (request, response) => {
     if (rejectCrossOriginPost(request, response)) return;
     const clientRequest = abortSignalForClientRequest(request, response);
     try {
-      await loadBelavistaNvidiaEnvironment();
       const payload = await readBody(request, 32 * 1024);
       const result = await reviewCatOcrText(payload, clientRequest.signal);
       return json(response, 200, result);
     } catch (error) {
       if (clientRequest.signal.aborted || response.destroyed) return;
       const status = Number(error?.statusCode);
-      return json(response, status >= 400 && status < 600 ? status : 502, { error: error.message || 'Falha ao extrair dados-chave da CAT com NVIDIA.' });
+      return json(response, status >= 400 && status < 600 ? status : 502, { error: error.message || 'Falha ao extrair dados-chave da CAT com MiniCPM.' });
     } finally {
       clientRequest.cleanup();
     }

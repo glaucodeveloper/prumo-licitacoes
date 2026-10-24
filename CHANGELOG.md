@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.0.14 — 24 de outubro de 2026
+
+- Evita reler páginas de CAT ao abrir documentos que já têm OCR salvo.
+- Salva a CAT após OCR NVIDIA e organiza os dados-chave com MiniCPM em segundo plano.
+- Adiciona editor de texto formatado para atividades e atalho do responsável técnico ao perfil profissional.
+- Publica Setup e Portable Windows x64.
+
 ## 1.0.13 — 24 de outubro de 2026
 
 - Usa o endpoint NVIDIA configurado para estruturar dados-chave das páginas de CAT.
