@@ -8,8 +8,8 @@ input:focus{outline:2px solid #7198ea}small{display:block;color:#9aa6b9;line-hei
 button{margin-top:20px;border:0;border-radius:10px;padding:13px 17px;background:#edf0f7;color:#101218;font-weight:700;cursor:pointer;width:100%}
 #error{color:#ff9292;min-height:22px;margin:13px 0 0}.panel{border:1px solid #384354;border-radius:12px;background:#202632;padding:14px;margin-top:22px}
 </style></head><body><h1>Chave de acesso</h1>
-<p>Informe somente a chave de acesso ngrok. O teste verifica a rota protegida, o OCR local e o MiniCPM usado para estruturar os dados das CATs. A chave permanece salva se o MiniCPM estiver temporariamente indisponível.</p>
+<p>Informe somente a chave de acesso ngrok. O teste executa uma leitura de imagem pelo OCR local e uma extração estruturada pelo MiniCPM. A chave permanece salva se o MiniCPM estiver temporariamente indisponível.</p>
 <form id="form"><label for="key">Chave do roteador</label><input id="key" type="password" required autocomplete="off" placeholder="Cole somente ROUTER_KEY" spellcheck="false">
 <div class="panel"><strong>Conexão configurada</strong><small id="target"></small><small>A chave salva fica no perfil local do Windows. Deixe o campo vazio para testar e manter a chave existente. Ela não é incluída no executável.</small></div>
-<button type="button" id="validate">Testar chave, OCR e MiniCPM</button><button type="submit" id="save">Salvar e abrir Prumo</button><p id="error" role="status" aria-live="polite"></p></form>
+<button type="button" id="validate">Testar chave, OCR e leitura do MiniCPM</button><button type="submit" id="save">Salvar e abrir Prumo</button><p id="error" role="status" aria-live="polite"></p></form>
 <script src="settings.js"></script></body></html>

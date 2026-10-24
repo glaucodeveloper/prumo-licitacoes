@@ -39,7 +39,7 @@ jobs:
           name: Prumo Licitações ${{ steps.version.outputs.version }}
           body: >-
             Binários Windows x64 do Prumo Licitações (Setup e Portable).
-            Corrige o unit do MiniCPM no host ngrok e valida OCR e MiniCPM na configuração da chave.
+            A configuração valida reconhecimento pelo OCR local e extração estruturada em JSON pelo MiniCPM.
           files: |
             output/electron-windows/Prumo-Licitacoes-Setup-${{ steps.version.outputs.version }}-x64.exe
             output/electron-windows/Prumo-Licitacoes-Portable-${{ steps.version.outputs.version }}-x64.exe

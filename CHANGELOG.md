@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.11 — 24 de outubro de 2026
+
+- A validação da chave executa uma leitura de imagem pelo OCR local e exige uma extração em JSON pelo MiniCPM antes de exibir sucesso.
+- Se o MiniCPM estiver temporariamente indisponível, a chave permanece salva com aviso claro.
+
 ## 1.0.7 — 23 de outubro de 2026
 
 - Verifica a chave ngrok e a saúde do OCR local em toda inicialização; pede outra chave se o roteador a rejeitar.
