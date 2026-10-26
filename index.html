@@ -11,7 +11,7 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Navegação principal">
-        <a class="brand" href="#assistente" aria-label="Prumo, início">
+        <a class="brand" href="#assistente" data-page="assistente" aria-label="Prumo, início" title="Ir para o início">
           <span class="brand-symbol"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5 22V6h8a5 5 0 1 1 0 10H9"/><path d="M19 22l-6-6"/><path d="M21 5v4"/></svg></span>
           <span class="brand-copy"><strong>prumo</strong><small>LICITAÇÕES &amp; OBRAS</small></span>
         </a>
@@ -25,7 +25,7 @@
 
         <div class="nav-caption">ESPAÇO DE TRABALHO</div>
         <nav class="nav-list">
-          <button class="nav-link active" data-page="assistente" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v9H9l-4 3v-3H3z"/><path d="M6.5 8h7M6.5 10.5h4.5"/></svg><span>Assistente</span><span class="nav-dot"></span></button>
+          <button class="nav-link active" data-page="assistente" type="button"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg><span>Painel</span><span class="nav-dot"></span></button>
           <button class="nav-link" data-page="editais" type="button"><svg viewBox="0 0 20 20"><path d="M5 2.75h7l3 3v11.5H5z"/><path d="M12 3v3h3M7.5 9h5M7.5 11.5h5M7.5 14h3"/></svg><span>Editais</span><span class="nav-count" id="noticeNavCount" hidden></span></button>
           <button class="nav-link" data-page="propostas" type="button"><svg viewBox="0 0 20 20"><path d="M3.5 5.5h13M5 3.5h10v13H5z"/><path d="m7.5 10 1.8 1.8 3.7-3.9"/></svg><span>Propostas</span><span class="nav-count" id="proposalNavCount" hidden></span></button>
           <button class="nav-link" data-page="cotacoes" type="button"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v11H3z"/><path d="M3 8h14M7 8v7.5M12 8v7.5"/><path d="M6 2.5v2M14 2.5v2"/></svg><span>Itens e cotações</span></button>
@@ -54,7 +54,7 @@
 
       <main class="main-area">
         <header class="topbar">
-          <div class="topbar-left"><button class="icon-button nav-toggle" id="toggleSidebar" type="button" aria-label="Recolher navegação" aria-expanded="true" title="Recolher navegação"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M8 4v12"/></svg></button><div class="breadcrumb"><span>Prumo</span><span class="crumb-sep">/</span><strong id="breadcrumbPage">Assistente</strong></div></div>
+          <div class="topbar-left"><button class="icon-button nav-back" id="navigateBack" type="button" aria-label="Voltar" title="Voltar" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5M7.5 10h9"/></svg></button><button class="icon-button nav-toggle" id="toggleSidebar" type="button" aria-label="Recolher navegação" aria-expanded="true" title="Recolher navegação"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="1.5"/><path d="M8 4v12"/></svg></button><nav class="breadcrumb" id="breadcrumb" aria-label="Navegação estrutural"><a class="breadcrumb-link" href="#assistente" data-page="assistente">Prumo</a><span class="crumb-sep" aria-hidden="true">/</span><span class="breadcrumb-current" id="breadcrumbPage" aria-current="page">Painel operacional</span></nav></div>
           <div class="topbar-right"><span class="today-label" id="todayLabel"></span><span class="top-separator"></span><span class="work-profile"><span class="profile-avatar">IC</span> Equipe</span><button class="icon-button" id="topSettings" type="button" aria-label="Configurações"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3"/><path d="m8.5 2.8.5 1.6a6 6 0 0 1 2 0l.5-1.6 2 .8-.5 1.6a6 6 0 0 1 1.4 1.4l1.6-.5.8 2-1.6.5a6 6 0 0 1 0 2l1.6.5-.8 2-1.6-.5a6 6 0 0 1-1.4 1.4l.5 1.6-2 .8-.5-1.6a6 6 0 0 1-2 0l-.5 1.6-2-.8.5-1.6a6 6 0 0 1-1.4-1.4l-1.6.5-.8-2 1.6-.5a6 6 0 0 1 0-2l-1.6-.5.8-2 1.6.5a6 6 0 0 1 1.4-1.4l-.5-1.6z"/></svg></button></div>
         </header>
         <div class="page-container" id="pageContainer" tabindex="-1"></div>

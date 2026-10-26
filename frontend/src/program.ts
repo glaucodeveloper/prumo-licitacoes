@@ -220,10 +220,15 @@ export async function startApplication(): Promise<void> {
   let catReaderZoom = 1;
   let catReprocessState: { busy: boolean; completed: number; total: number; current: string; status: string } = { busy: false, completed: 0, total: 0, current: '', status: '' };
   let renderedPage = '';
+  const pageLabels = { assistente: 'Painel operacional', editais: 'Editais', agenda: 'Agenda de editais', 'notice-detail': 'Detalhe do edital', propostas: 'Propostas', 'proposal-editor': 'Documento da proposta', cotacoes: 'Itens e cotações', cats: 'CATs técnicas', 'cat-reader': 'Leitura da CAT', 'perfis-profissionais': 'Perfis profissionais', 'perfil-profissional': 'Perfil profissional', clientes: 'Leads', cnaes: 'Empresas' };
+  const parentPages = { agenda: 'editais', 'notice-detail': 'editais', 'proposal-editor': 'propostas', 'cat-reader': 'cats', 'perfil-profissional': 'perfis-profissionais' };
+  const pageHistory: string[] = [];
+  let backNavigationTransition: { from: string; to: string } | null = null;
   let agendaMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   let agendaSelectedDate = '';
   let chatDocumentQueue = Promise.resolve();
   let captureBusy = false;
+  let dashboardChatExpanded = false;
   let captureFeedback = '';
   let manualCaptureProgress: Record<string, any> | null = null;
   let automationStatus: Record<string, any> = { enabled: state.settings.captureAutomationEnabled !== false, lastStatus: 'connecting', busy: false };
@@ -604,6 +609,28 @@ export async function startApplication(): Promise<void> {
     render();
     if (focus) pageContainer.focus({ preventScroll: true });
   }
+  function getBackTarget() {
+    return pageHistory.at(-1) || parentPages[state.page] || (state.page !== 'assistente' ? 'assistente' : '');
+  }
+  function breadcrumbMarkup() {
+    const crumbs = [{ label: 'Prumo', page: 'assistente' }];
+    const parent = parentPages[state.page];
+    if (parent && parent !== 'assistente') crumbs.push({ label: pageLabels[parent] || 'Assistente', page: parent });
+    const links = crumbs.map((crumb) => `<a class="breadcrumb-link" href="#${esc(crumb.page)}" data-page="${esc(crumb.page)}">${esc(crumb.label)}</a>`).join('<span class="crumb-sep" aria-hidden="true">/</span>');
+    return `${links}<span class="crumb-sep" aria-hidden="true">/</span><span class="breadcrumb-current" id="breadcrumbPage" aria-current="page">${esc(pageLabels[state.page] || 'Assistente')}</span>`;
+  }
+  function navigateBack() {
+    const from = state.page;
+    const target = pageHistory.pop() || parentPages[from] || (from !== 'assistente' ? 'assistente' : '');
+    if (!target) return;
+    if (from === 'perfil-profissional' && target === 'perfis-profissionais') state.selectedProfessionalProfile = '';
+    if (target === 'cats') state.navigationExpandedOnCats = false;
+    backNavigationTransition = { from, to: target };
+    state.page = target;
+    saveState();
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   function renderSidebar() {
     const active = company(state.activeCompany);
     getElement('companyMark').textContent = active.mark;
@@ -731,32 +758,90 @@ export async function startApplication(): Promise<void> {
 
   function assistantPage() {
     const notices = filterByCompany(state.notices).slice().sort((a, b) => b.score - a.score);
-    const soon = [...notices].sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 3);
     const contextIds = state.activeCompany === 'all' ? ['confidence', 'isocon'] : [state.activeCompany];
-    const actions = `<button class="button-secondary" data-page="editais" type="button">Ver editais${icons.arrow}</button>`;
-    const initialOverview = notices.length
-      ? `<p>O radar contém <strong>${notices.length} edital(is)</strong> nesta empresa. Cada registro mantém sua fonte para conferência no portal oficial.</p>${notices.slice(0, 3).map((notice) => `<button class="notice-suggestion" type="button" data-select-notice="${esc(notice.id)}"><span class="suggestion-code">${esc(notice.id.split('-')[0])}</span><span class="suggestion-copy"><strong>${esc(notice.object)}</strong><small>${esc(notice.agency)} · ${dateLong(notice.deadline)} · ${esc(companyName(notice.company))}</small></span><span class="match-badge ${notice.score < 85 ? 'mid' : ''}">${notice.score}% aderência</span></button>`).join('')}`
-      : `<p>O radar está vazio. Consulte os portais públicos em <strong>Editais</strong> para carregar processos reais ligados aos CNAEs verificados.</p><button class="button-secondary button-sm" data-page="editais" type="button">Abrir consulta de portais</button>`;
-    return `${heading('Assistente de licitações', 'Triagem, leitura e preparação de propostas com contexto das duas empresas.', actions)}
-      <div class="chat-layout">
-        <section class="chat-workspace" aria-label="Conversa com o assistente">
-          <div class="chat-head"><div class="chat-agent"><span class="agent-mark">${icons.spark}</span><span><strong>Prumo · análise de editais</strong><small class="dev-only">${integrationStatus.assistant ? esc(integrationStatus.assistantProvider) : 'Serviço do assistente indisponível'}</small></span></div><div class="chat-head-actions"><span class="context-chip">${icons.building}<span>${state.activeCompany === 'all' ? 'Confidence + Isocon' : esc(company(state.activeCompany).short)}</span></span><button class="button-secondary button-sm chat-clear-button" data-action="clear-chat" type="button" aria-label="Limpar histórico do chat" title="Limpar histórico do chat" ${state.chatMessages.length ? '' : 'disabled'}>Limpar chat</button></div></div>
-          <div class="chat-scroll" id="chatScroll"><div class="chat-thread" id="chatThread">
-            <div class="assistant-message"><span class="agent-mark">${icons.spark}</span><div class="message-content"><div class="message-meta"><strong>Prumo</strong><span>·</span><time>agora</time></div><div class="assistant-copy">${initialOverview}
-              <div class="response-summary"><div class="mini-stat"><span>Para revisar</span><strong>${notices.filter((item) => item.status === 'Analisar' || item.status === 'Novo').length.toString().padStart(2, '0')}</strong><small>editais na lista</small></div><div class="mini-stat"><span>Próximo prazo</span><strong>${soon[0] ? dateLong(soon[0].deadline) : '—'}</strong><small>${soon[0] ? relativeDeadline(soon[0].deadline) : 'sem prazo'}</small></div><div class="mini-stat"><span>Propostas abertas</span><strong>${filterByCompany(state.proposals).length.toString().padStart(2, '0')}</strong><small>em preparação ou revisão</small></div></div>
-            </div></div></div>
-            ${state.chatMessages.filter((message) => !isRetiredModelTestMessage(message)).map((message) => renderChatMessage(message)).join('')}
-          </div></div>
-          ${isSending ? `<div class="thinking-row"><span class="thinking-dot"></span>Consultando contexto do workspace…</div>` : ''}
-          <div class="chat-prompt-row" aria-label="Consultas rápidas">${routineOptions.slice(0, 3).map((routine) => `<button class="prompt-chip" type="button" data-routine="${esc(routine.id)}">${esc(routine.label)}</button>`).join('')}${chatQueries.map((query, index) => `<button class="prompt-chip" type="button" data-chat-query="${index}">${esc(query.label)}</button>`).join('')}</div>
-          <div class="chat-composer-wrap"><form class="composer" id="chatForm"><textarea id="chatInput" rows="2" aria-label="Mensagem para o assistente" placeholder="Cruze CATs, compare editais ou analise documentos juntos…"></textarea><div class="composer-tools"><span class="composer-helper">${icons.info}<span>Contexto local: ${chatContextSummary()}. Cruze CATs e memórias do workspace; arraste até 5 arquivos. Modelos: <code>/modelo minicpm</code> ativa MiniCPM pelo ngrok; <code>/modelo metis</code> ativa Metis pelo ngrok; <code>/modelo nvidia</code> usa NVIDIA.</span></span><button class="composer-send" type="submit" aria-label="Enviar mensagem">${icons.arrow}</button></div></form></div>
-        </section>
-        <aside>
-          <section class="context-panel"><div class="panel-heading"><h2>Perfis de atuação</h2><button class="text-button" data-page="cnaes" type="button">Editar CNAEs</button></div>${contextIds.map(cnaeContextCard).join('')}</section>
-          <section class="context-panel"><div class="panel-heading"><h2>Próximos prazos</h2><button class="text-button" data-page="agenda" type="button">Ver agenda</button></div>${soon.map(deadlineRow).join('') || '<p class="muted">Nenhum prazo próximo.</p>'}</section>
-          <section class="context-panel"><div class="panel-heading"><h2>Memória operacional</h2><button class="text-button" id="openMemory" data-action="open-memory" type="button">Editar</button></div><div class="memory-card"><span class="memory-orb">M</span><span class="memory-card-copy"><strong>${state.memories.length} registros neste workspace</strong><small class="dev-only">${integrationStatus.assistant ? `Contexto enviado ao ${esc(integrationStatus.assistantProvider)} em cada conversa` : 'Armazenados neste navegador'}</small></span></div></section>
+    const proposals = filterByCompany(state.proposals);
+    const activeProposals = proposals.filter((proposal) => !/^(?:enviada|conclu[ií]da|cancelada|arquivada|encerrada|finalizada)$/i.test(String(proposal.status || '').trim()));
+    const needsReview = notices.filter((notice) => ['Analisar', 'Novo', 'Revisar', 'Documentos pendentes'].includes(notice.status));
+    const upcoming = notices.filter((notice) => daysLeft(notice.deadline) >= 0 && daysLeft(notice.deadline) <= 30).sort((a, b) => daysLeft(a.deadline) - daysLeft(b.deadline));
+    const weekDeadlines = upcoming.filter((notice) => daysLeft(notice.deadline) <= 7);
+    const cats = contextIds.flatMap((id) => (company(id).cats || []).map((cat) => ({ ...cat, companyId: id })));
+    const attachedCats = cats.filter((cat: any) => cat.documentId).length;
+    const profiles = state.professionalProfiles.filter((profile) => contextIds.includes(profile.companyId));
+    const recentHistory = (state.noticeHistory || []).slice().sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 4);
+    const scope = state.activeCompany === 'all' ? 'Confidence + Isocon' : company(state.activeCompany).short;
+    const captureState = captureBusy || automationStatus.busy ? 'Consulta em andamento' : automationStatus.enabled ? 'Rotina programada ativa' : 'Rotina pausada';
+    const lastCaptureAt = automationStatus.lastRunAt || lastAutomationResultAt || state.captureReport?.collectedAt;
+    const reviewRows = needsReview.slice().sort((a, b) => daysLeft(a.deadline) - daysLeft(b.deadline)).slice(0, 4).map((notice) => `
+      <button class="ops-work-row" type="button" data-select-notice="${esc(notice.id)}">
+        <span class="ops-work-mark">${icons.doc}</span><span class="ops-work-copy"><strong>${esc(notice.id)} · ${esc(companyName(notice.company))}</strong><small>${esc(notice.object || 'Objeto não informado')}</small></span>${statusBadge(notice.status || 'Analisar')}
+      </button>`).join('');
+    const proposalRows = activeProposals.slice(0, 3).map((proposal) => {
+      const notice = state.notices.find((item) => item.id === proposal.noticeId);
+      return `<button class="ops-proposal-row" type="button" data-page="propostas"><span class="ops-proposal-code">${esc(proposal.id)}</span><span><strong>${esc(notice?.object || proposal.noticeId || 'Proposta sem edital vinculado')}</strong><small>${esc(companyName(proposal.company))} · ${esc(proposal.status || 'Em andamento')}</small></span>${statusBadge(proposal.status || 'Em preparação')}</button>`;
+    }).join('');
+    const quickActions = `<button class="button-secondary" data-action="collect-notices" type="button" ${captureBusy || automationStatus.busy ? 'disabled' : ''}>${captureBusy || automationStatus.busy ? 'Consultando portais…' : 'Consultar portais'}</button><button class="button-primary chat-toggle-button" id="toggleDashboardChat" data-action="toggle-dashboard-chat" type="button" aria-controls="dashboardChatPanel" aria-expanded="false">${icons.spark}<span class="chat-toggle-label">Abrir chat</span>${state.chatMessages.length ? `<span class="chat-unread-count" aria-label="${state.chatMessages.length} mensagens">${state.chatMessages.length}</span>` : ''}</button>`;
+    const dashboardHeading = heading('Painel operacional', `Visão diária de editais, propostas e acervo técnico · ${scope}.`, quickActions);
+    const sourceLabel = automationStatus.lastStatus === 'error' ? 'Última consulta com falha' : automationStatus.lastStatus === 'partial' ? 'Última consulta parcial' : 'Fontes públicas';
+    const workQueue = needsReview.length
+      ? reviewRows
+      : notices.length
+        ? '<div class="ops-empty-state"><strong>Nenhum edital pendente de revisão</strong><span>O radar está atualizado com os registros atuais.</span></div>'
+        : '<div class="ops-empty-state"><strong>A fila começa pela consulta dos portais</strong><span>Busque processos públicos para esta empresa. O Prumo salva a fonte oficial de cada resultado.</span><button class="text-button" data-page="editais" type="button">Abrir consulta de editais</button></div>';
+    const deadlinesMarkup = upcoming.length
+      ? upcoming.slice(0, 4).map((notice) => `<button class="ops-deadline-row" type="button" data-select-notice="${esc(notice.id)}"><span class="ops-deadline-date"><strong>${new Date(`${notice.deadline}T12:00:00`).getDate()}</strong><small>${new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(`${notice.deadline}T12:00:00`)).replace('.', '')}</small></span><span class="ops-deadline-copy"><strong>${esc(notice.id)}</strong><small>${esc(notice.object || companyName(notice.company))}</small></span><span class="ops-deadline-distance">${relativeDeadline(notice.deadline)}</span></button>`).join('')
+      : '<div class="ops-empty-state compact"><strong>Sem prazo nos próximos 30 dias</strong><span>Consulte a agenda para conferir os demais editais.</span></div>';
+    const recentMarkup = recentHistory.length
+      ? recentHistory.map((entry) => `<div class="ops-history-row"><span class="ops-history-dot"></span><span><strong>${esc(entry.type || 'Atualização')}</strong><small>${esc(entry.text || entry.noticeId || 'Registro atualizado')}${entry.at ? ` · ${new Date(entry.at).toLocaleDateString('pt-BR')}` : ''}</small></span></div>`).join('')
+      : '<div class="ops-empty-state compact"><strong>Sem movimentações registradas</strong><span>Atualizações de editais aparecerão aqui.</span></div>';
+    return `${dashboardHeading}
+      <div class="operations-layout${dashboardChatExpanded ? ' chat-open' : ''}">
+        <div class="operations-main">
+          <section class="ops-welcome-band"><div><span class="ops-signal"><i></i>${notices.length ? `${notices.length} edital(is) no radar` : 'Workspace pronto para operar'}</span><h2>O que precisa de atenção agora?</h2><p>${needsReview.length ? `${needsReview.length} edital(is) aguardam conferência humana.` : notices.length ? 'Não há edital pendente de revisão.' : 'Consulte os portais públicos para carregar processos reais.'} ${weekDeadlines.length ? `${weekDeadlines.length} prazo(s) vencem em até 7 dias.` : ''}</p></div><button class="button-quiet" data-page="agenda" type="button">Abrir calendário ${icons.arrow}</button></section>
+          <section class="ops-metrics" aria-label="Resumo operacional">
+            <button class="ops-metric" data-page="editais" type="button"><span>Editais no radar</span><strong>${notices.length}</strong><small>fontes preservadas para conferência</small></button>
+            <button class="ops-metric attention" data-page="editais" type="button"><span>Aguardando revisão</span><strong>${needsReview.length}</strong><small>triagem não substitui validação</small></button>
+            <button class="ops-metric deadline" data-page="agenda" type="button"><span>Prazos em 7 dias</span><strong>${weekDeadlines.length}</strong><small>${upcoming.length} nos próximos 30 dias</small></button>
+            <button class="ops-metric" data-page="propostas" type="button"><span>Propostas em andamento</span><strong>${activeProposals.length}</strong><small>rascunhos e revisões abertas</small></button>
+          </section>
+          <div class="ops-content-grid">
+            <section class="ops-panel ops-work-panel"><header class="ops-panel-head"><div><h2>Fila de trabalho</h2><p>Itens que pedem uma próxima ação</p></div><button class="text-button" data-page="editais" type="button">Ver editais</button></header><div class="ops-work-list">${workQueue}</div>
+              <div class="ops-subsection"><div class="ops-panel-head compact"><div><h3>Propostas</h3><p>${activeProposals.length ? `${activeProposals.length} em andamento` : 'Nenhuma proposta aberta'}</p></div><button class="text-button" data-page="propostas" type="button">Abrir propostas</button></div>${proposalRows || '<div class="ops-empty-state compact"><strong>Sem propostas em andamento</strong><span>Crie uma a partir do detalhe de um edital.</span></div>'}</div>
+            </section>
+            <div class="ops-side-stack">
+              <section class="ops-panel"><header class="ops-panel-head"><div><h2>Próximos prazos</h2><p>Datas cadastradas nos editais</p></div><button class="text-button" data-page="agenda" type="button">Calendário</button></header><div class="ops-deadline-list">${deadlinesMarkup}</div></section>
+              <section class="ops-panel ops-capture-panel"><header class="ops-panel-head"><div><h2>Coleta de editais</h2><p>${esc(sourceLabel)}</p></div><span class="ops-state-pill ${captureBusy || automationStatus.busy ? 'running' : automationStatus.enabled ? 'ready' : 'paused'}"><i></i>${esc(captureState)}</span></header><p class="ops-capture-detail">${lastCaptureAt ? `Última consulta: ${new Date(lastCaptureAt).toLocaleString('pt-BR')}` : 'Nenhuma consulta registrada neste workspace.'}${automationStatus.lastError ? `<br><span>${esc(automationStatus.lastError)}</span>` : ''}</p><button class="button-secondary button-sm" data-page="editais" type="button">Ver fontes e configurar</button></section>
+              <section class="ops-panel ops-records-panel"><header class="ops-panel-head"><div><h2>Acervo técnico</h2><p>Documentos disponíveis para cruzamento</p></div><button class="text-button" data-page="cats" type="button">Abrir CATs</button></header><div class="ops-record-counts"><span><strong>${cats.length}</strong><small>CATs</small></span><span><strong>${attachedCats}</strong><small>PDFs vinculados</small></span><span><strong>${profiles.length}</strong><small>perfis</small></span></div></section>
+            </div>
+          </div>
+          <section class="ops-panel ops-history-panel"><header class="ops-panel-head"><div><h2>Movimentações recentes</h2><p>Histórico registrado no workspace</p></div></header><div class="ops-history-list">${recentMarkup}</div></section>
+        </div>
+        <aside class="operations-chat" id="dashboardChatPanel" aria-label="Chat do assistente" hidden>
+          <section class="chat-workspace" aria-label="Conversa com o assistente">
+            <div class="chat-head"><div class="chat-agent"><span class="agent-mark">${icons.spark}</span><span><strong>Prumo · análise de editais</strong><small class="dev-only">${integrationStatus.assistant ? esc(integrationStatus.assistantProvider) : 'Serviço do assistente indisponível'}</small></span></div><div class="chat-head-actions"><span class="context-chip">${icons.building}<span>${state.activeCompany === 'all' ? 'Confidence + Isocon' : esc(company(state.activeCompany).short)}</span></span><button class="icon-button chat-close-button" data-action="close-dashboard-chat" type="button" aria-label="Recolher chat" title="Recolher chat">×</button></div></div>
+            <div class="chat-scroll" id="chatScroll"><div class="chat-thread" id="chatThread">
+              ${state.chatMessages.filter((message) => !isRetiredModelTestMessage(message)).map((message) => renderChatMessage(message)).join('') || `<div class="assistant-message"><span class="agent-mark">${icons.spark}</span><div class="message-content"><div class="message-meta"><strong>Prumo</strong><span>·</span><time>agora</time></div><div class="assistant-copy"><p>Posso cruzar editais, propostas e CATs atuais deste workspace. Pergunte sobre um registro ou peça uma comparação.</p>${!notices.length && !cats.length ? '<p>O acervo está vazio. Consulte os portais ou cadastre uma CAT para começar.</p>' : ''}</div></div></div>`}
+            </div></div>
+            ${isSending ? '<div class="thinking-row"><span class="thinking-dot"></span>Consultando contexto do workspace…</div>' : ''}
+            <div class="chat-prompt-row" aria-label="Consultas rápidas">${routineOptions.slice(0, 2).map((routine) => `<button class="prompt-chip" type="button" data-routine="${esc(routine.id)}">${esc(routine.label)}</button>`).join('')}${chatQueries.map((query, index) => `<button class="prompt-chip" type="button" data-chat-query="${index}">${esc(query.label)}</button>`).join('')}</div>
+            <div class="chat-composer-wrap"><form class="composer" id="chatForm"><textarea id="chatInput" rows="2" aria-label="Mensagem para o assistente" placeholder="Pergunte sobre os editais e CATs do workspace…"></textarea><div class="composer-tools"><span class="composer-helper">${icons.info}<span>Contexto local: ${chatContextSummary()}. Arraste até 5 arquivos para análise conjunta.</span></span><button class="composer-send" type="submit" aria-label="Enviar mensagem">${icons.arrow}</button></div></form></div>
+          </section>
         </aside>
       </div>`;
+  }
+
+  function setDashboardChatExpanded(expanded: boolean) {
+    dashboardChatExpanded = expanded;
+    const layout = queryOne('.operations-layout');
+    const panel = getElement('dashboardChatPanel');
+    const toggle = getElement('toggleDashboardChat');
+    layout?.classList.toggle('chat-open', expanded);
+    if (panel) panel.hidden = !expanded;
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.setAttribute('aria-label', expanded ? 'Recolher chat' : 'Abrir chat');
+      const label = toggle.querySelector('.chat-toggle-label');
+      if (label) label.textContent = expanded ? 'Fechar chat' : 'Abrir chat';
+    }
   }
 
   function isRetiredModelTestMessage(message) {
@@ -3014,6 +3099,13 @@ export async function startApplication(): Promise<void> {
 
   function render() {
     const pageChanged = renderedPage !== state.page;
+    if (pageChanged && renderedPage) {
+      if (backNavigationTransition?.from === renderedPage && backNavigationTransition.to === state.page) backNavigationTransition = null;
+      else {
+        pageHistory.push(renderedPage);
+        if (pageHistory.length > 40) pageHistory.shift();
+      }
+    }
     const previousConversation = !pageChanged ? activeConversationForPage(state.page) : null;
     const previousChatScroll = previousConversation ? getElement(previousConversation.scrollId) : null;
     const preservedChatScrollTop = previousChatScroll?.scrollTop || 0;
@@ -3035,7 +3127,7 @@ export async function startApplication(): Promise<void> {
     renderedPage = state.page;
     renderSidebar();
     const shell = queryOne('.app-shell');
-    shell?.classList.toggle('chat-page-mode', state.page === 'assistente');
+    shell?.classList.toggle('dashboard-page-mode', state.page === 'assistente');
     shell?.classList.toggle('proposal-editor-mode', state.page === 'proposal-editor');
     shell?.classList.toggle('cat-reader-mode', state.page === 'cat-reader');
     const onCatPage = state.page === 'cats' || state.page === 'cat-reader';
@@ -3045,10 +3137,11 @@ export async function startApplication(): Promise<void> {
     navigationToggle?.setAttribute('aria-expanded', String(!navigationCollapsed));
     navigationToggle?.setAttribute('aria-label', navigationCollapsed ? 'Expandir navegação' : 'Recolher navegação');
     navigationToggle?.setAttribute('title', navigationCollapsed ? 'Expandir navegação' : 'Recolher navegação');
-    const names = { assistente: 'Assistente', editais: 'Editais', agenda: 'Agenda de editais', 'notice-detail': 'Detalhe do edital', propostas: 'Propostas', 'proposal-editor': 'Documento da proposta', cotacoes: 'Itens e cotações', cats: 'CATs técnicas', 'cat-reader': 'Leitura da CAT', 'perfis-profissionais': 'Perfis profissionais', 'perfil-profissional': 'Perfil profissional', clientes: 'Leads', cnaes: 'Empresas' };
-    getElement('breadcrumbPage').textContent = names[state.page] || 'Assistente';
+    getElement('breadcrumb').innerHTML = breadcrumbMarkup();
+    (getElement('navigateBack') as HTMLButtonElement).disabled = !getBackTarget();
     const pages = { assistente: assistantPage, editais: noticesPage, agenda: agendaPage, 'notice-detail': noticeDetailPage, propostas: proposalsPage, 'proposal-editor': proposalEditorPage, cotacoes: quoteItemsPage, cats: catsPage, 'cat-reader': catReaderPage, 'perfis-profissionais': professionalProfilesPage, 'perfil-profissional': professionalProfileDetailPage, clientes: clientsPage, cnaes: cnaesPage };
     pageContainer.innerHTML = (pages[state.page] || assistantPage)();
+    if (state.page === 'assistente') setDashboardChatExpanded(dashboardChatExpanded);
     if (state.page === 'notice-detail') queryOne('.nav-link[data-page="editais"]')?.classList.add('active');
     if (pageChanged && window.matchMedia('(max-width: 720px)').matches) {
       requestAnimationFrame(() => queryOne('.nav-link.active')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }));
@@ -5676,6 +5769,7 @@ export async function startApplication(): Promise<void> {
       render();
       return;
     }
+    if (eventElement(event).closest('#navigateBack')) { navigateBack(); return; }
     const nav = eventElement(event).closest('[data-page]');
     if (nav) { event.preventDefault(); setPage(nav.dataset.page); return; }
     const agendaMonthButton = eventElement(event).closest('[data-agenda-month]');
@@ -5698,11 +5792,11 @@ export async function startApplication(): Promise<void> {
     const companyButton = eventElement(event).closest('.company-option[data-company]');
     if (companyButton) { state.activeCompany = companyButton.dataset.company; state.selectedNotice = filterByCompany(state.notices)[0]?.id || ''; state.selectedProposal = filterByCompany(state.proposals)[0]?.id || ''; state.selectedItem = filterByCompany(state.items)[0]?.id || ''; if (['notice-detail', 'cat-reader'].includes(state.page)) state.page = state.page === 'cat-reader' ? 'cats' : 'editais'; if (state.page === 'perfil-profissional' && state.activeCompany !== 'all' && company(state.activeCompany).id !== state.professionalProfiles.find((profile) => profile.id === state.selectedProfessionalProfile)?.companyId) { state.page = 'perfis-profissionais'; state.selectedProfessionalProfile = ''; } getElement('companyMenu').hidden = true; getElement('companySwitcher').setAttribute('aria-expanded', 'false'); saveState(); render(); return; }
     const queryButton = eventElement(event).closest('[data-chat-query]');
-    if (queryButton) { const query = chatQueries[Number(queryButton.dataset.chatQuery)]; if (query) { if (state.page !== 'assistente') state.page = 'assistente'; void sendChat(query.prompt); } return; }
+    if (queryButton) { const query = chatQueries[Number(queryButton.dataset.chatQuery)]; if (query) { dashboardChatExpanded = true; if (state.page !== 'assistente') state.page = 'assistente'; void sendChat(query.prompt); } return; }
     const routineButton = eventElement(event).closest('[data-routine]');
     if (routineButton) {
       const routine = routineOptions.find((item) => item.id === routineButton.dataset.routine);
-      if (routine) { if (state.page !== 'assistente') state.page = 'assistente'; void sendChat(routine.label, { routineId: routine.id }); }
+      if (routine) { dashboardChatExpanded = true; if (state.page !== 'assistente') state.page = 'assistente'; void sendChat(routine.label, { routineId: routine.id }); }
       return;
     }
     const selectNotice = eventElement(event).closest('[data-select-notice]');
@@ -5714,6 +5808,12 @@ export async function startApplication(): Promise<void> {
     const itemCard = eventElement(event).closest('[data-item]');
     if (itemCard) { state.selectedItem = itemCard.dataset.item; saveState(); render(); return; }
     const action = eventElement(event).closest('[data-action]')?.dataset.action;
+    if (action === 'toggle-dashboard-chat') {
+      setDashboardChatExpanded(!dashboardChatExpanded);
+      if (dashboardChatExpanded) getElement('chatInput')?.focus({ preventScroll: true });
+      return;
+    }
+    if (action === 'close-dashboard-chat') { setDashboardChatExpanded(false); getElement('toggleDashboardChat')?.focus({ preventScroll: true }); return; }
     if (action === 'clear-chat') {
       if (!state.chatMessages.length) { toast('O histórico do chat já está vazio.'); return; }
       const confirmed = window.confirm('Apagar o histórico do chat deste workspace? As mensagens e anexos não poderão ser recuperados. CATs e memórias não serão alteradas.');
@@ -6014,6 +6114,7 @@ export async function startApplication(): Promise<void> {
   });
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); openSettings(); }
+    if (event.key === 'Escape' && dashboardChatExpanded && state.page === 'assistente') { setDashboardChatExpanded(false); getElement('toggleDashboardChat')?.focus({ preventScroll: true }); return; }
     if (event.key === 'Escape' && !settingsDialog.open && !memoryDialog.open) getElement('companyMenu').hidden = true;
   });
   const globalFileDropOverlay = document.createElement('div');

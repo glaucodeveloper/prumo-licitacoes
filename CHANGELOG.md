@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.15 — 26 de outubro de 2026
+
+- Adiciona dashboard operacional com acesso opcional ao chat em painel lateral recolhível.
+- Torna os breadcrumbs navegáveis e adiciona voltar e retorno à página inicial pela logo.
+- Publica Setup e Portable Windows x64.
+
 ## 1.0.14 — 24 de outubro de 2026
 
 - Evita reler páginas de CAT ao abrir documentos que já têm OCR salvo.
